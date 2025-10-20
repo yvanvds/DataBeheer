@@ -114,3 +114,6 @@ _build/
 
 # poetry files
 pyproject.toml
+
+# node
+node_modules/

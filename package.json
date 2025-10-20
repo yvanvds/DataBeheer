@@ -1,0 +1,23 @@
+{
+  "name": "databeheer",
+  "version": "1.0.0",
+  "description": "The template allows you to start your own TeachBook and hosting that TeachBook online without knowledge on Git, the Jupyter book package, python or anaconda. It doesn't elaborate on the collaborative functionalities of Git or how to edit the book. Please look at our manual (https://teachbooks.io/manual) to find more about that!",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yvanvds/DataBeheer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yvanvds/DataBeheer/issues"
+  },
+  "homepage": "https://github.com/yvanvds/DataBeheer#readme",
+  "devDependencies": {
+    "monaco-editor": "^0.54.0"
+  }
+}
