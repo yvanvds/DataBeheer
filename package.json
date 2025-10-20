@@ -19,5 +19,8 @@
   "homepage": "https://github.com/yvanvds/DataBeheer#readme",
   "devDependencies": {
     "monaco-editor": "^0.54.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0"
   }
 }
