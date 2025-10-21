@@ -1,5 +1,7 @@
-// _static/sql-editors.js
-const MONACO_BASE = '/_static/monaco';
+// Figure out the correct _static base at runtime
+const STATIC_BASE = window.__STATIC_BASE__ || '/_static';
+const MONACO_BASE = STATIC_BASE + '/monaco';
+
 
 function escapeHtml(s) {
   return String(s)
@@ -15,25 +17,44 @@ function renderTable(columns, rows, truncated) {
   return `<table class="sqljs-table">${thead}<tbody>${tbody}</tbody></table>${note}`;
 }
 
-const worker = new Worker('/_static/sql-worker.js'); // classic worker
+async function createClassicWorker(staticBase) {
+  const bootstrap = `
+    try {
+      self.__STATIC_BASE__ = ${JSON.stringify(STATIC_BASE)};
+      importScripts(self.__STATIC_BASE__ + '/sqljs/sql-wasm.js',
+                    self.__STATIC_BASE__ + '/sql-worker-core.js');
+      postMessage({ id: null, type: 'debug', payload: { msg: 'bootstrap: importScripts OK' } });
+    } catch (e) {
+      postMessage({ id: null, type: 'debug', payload: { msg: 'bootstrap: importScripts FAILED', data: String(e) } });
+    }
+  `;
+  const blob = new Blob([bootstrap], { type: 'application/javascript' });
+  return new Worker(URL.createObjectURL(blob)); // classic worker, guaranteed
+}
+
+const worker = await createClassicWorker(STATIC_BASE);// classic worker
 const listeners = new Map(); // id -> { outputEl }
 worker.onmessage = (ev) => {
   const { id, type, payload } = ev.data || {};
+
+  if (type === 'debug') {
+    // Centralized debug logging from the worker:
+    const { msg, data } = payload || {};
+    console.debug('[sql-worker]', msg, data);
+    return;
+  }
+
   const L = listeners.get(id);
   if (!L) return;
 
   if (type === 'result') {
-    const { columns, rows, truncated } = payload;
-    if (!columns || !rows) {
-      L.outputEl.textContent = 'OK';
-    } else {
-      L.outputEl.innerHTML = renderTable(columns, rows, truncated);
-    }
+    const { columns, rows, truncated } = payload || {};
+    if (!columns || !rows) L.outputEl.textContent = 'OK';
+    else L.outputEl.innerHTML = renderTable(columns, rows, truncated);
   } else if (type === 'error') {
     L.outputEl.textContent = 'Error: ' + payload;
   } else if (type === 'schema') {
-    // You can render a schema browser here later
-    // console.log('schema', payload);
+    // render or ignore for now
   }
 };
 
@@ -197,15 +218,17 @@ onReady(async () => {
     if (seedUrl) {
       try {
         const res = await fetch(seedUrl);
+        console.debug('[seed] fetch', seedUrl, res.status, res.statusText);
         if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
         seedBuf = await res.arrayBuffer();
+        console.debug('[seed] bytes', seedBuf.byteLength);
       } catch (e) {
         console.warn('Could not fetch seed DB', seedUrl, e);
       }
     }
 
     // 3) Create one worker for the page (classic worker)
-    const worker = new Worker('/_static/sql-worker.js');
+    const worker = await createClassicWorker(STATIC_BASE);
 
     // 4) Wire the worker listener map (if not already present)
     const listeners = new Map();

@@ -1,22 +1,20 @@
-// _static/sql-worker.js  (classic worker with debug)
-importScripts('/_static/sqljs/sql-wasm.js');
-
+// _static/sql-worker-core.js  (core logic; assumes initSqlJs is already available)
 let SQL; // sql.js module factory
 const sessions = new Map(); // id -> { db }
 const DEBUG = true;
+const STATIC_BASE = self.__STATIC_BASE__ || '/_static';
 
 function dbg(msg, data) {
   if (!DEBUG) return;
-  // Send a structured debug message back to the main thread.
-  // You’ll log it there in worker.onmessage.
   self.postMessage({ id: null, type: 'debug', payload: { msg, data } });
 }
 
 async function ensureSQL() {
   if (!SQL) {
     dbg('ensureSQL: loading sql.js …', null);
+    // initSqlJs is provided by sql-wasm.js, already importScript’ed by the bootstrap.
     SQL = await initSqlJs({
-      locateFile: f => '/_static/sqljs/' + f
+      locateFile: f => STATIC_BASE + '/sqljs/' + f
     });
     dbg('ensureSQL: sql.js loaded', { hasModule: !!SQL });
   }
@@ -31,7 +29,6 @@ function inspectSeed(seedBuf) {
   if (!seedBuf) return { present:false };
   const byteLength = seedBuf.byteLength || 0;
   const head = new Uint8Array(seedBuf, 0, Math.min(16, byteLength));
-  // SQLite files start with "SQLite format 3\0"
   const magic = Array.from(head).map(b => String.fromCharCode(b)).join('');
   const looksSqlite = magic.startsWith('SQLite format 3');
   return { present:true, byteLength, headHex: [...head].map(b=>b.toString(16).padStart(2,'0')).join(' '), magic, looksSqlite };
@@ -42,7 +39,7 @@ self.onmessage = async (ev) => {
   try {
     if (type === 'init') {
       await ensureSQL();
-      const seedBuf = payload?.seedBuf; // ArrayBuffer, optional
+      const seedBuf = payload?.seedBuf;
       const info = inspectSeed(seedBuf);
       dbg('init: seed info', info);
 
@@ -58,12 +55,9 @@ self.onmessage = async (ev) => {
       }
 
       sessions.set(id, { db });
-      self.postMessage({
-        id, type: 'result',
-        payload: { columns: ['status'], rows: [['ready']], truncated:false }
-      });
+      self.postMessage({ id, type: 'result',
+        payload: { columns: ['status'], rows: [['ready']], truncated:false }});
 
-      // Optional: emit a quick table count so you immediately see if seed loaded
       try {
         const r = db.exec(`SELECT count(*) AS n
                            FROM sqlite_master
@@ -105,7 +99,7 @@ self.onmessage = async (ev) => {
       const s = sessions.get(id);
       if (s?.db) { try { s.db.close(); } catch {} }
       await ensureSQL();
-      const seedBuf = payload?.seedBuf; // optional
+      const seedBuf = payload?.seedBuf;
       const info = inspectSeed(seedBuf);
       dbg('reset: seed info', info);
 
