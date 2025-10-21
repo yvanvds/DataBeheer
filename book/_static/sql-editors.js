@@ -1,6 +1,9 @@
 // _static/sql-editors.js
 // --- Config ---
-const STATIC_BASE = window.__STATIC_BASE__ || '/_static';
+const _script = document.currentScript || document.querySelector('script[src*="sql-editors.js"]');
+const STATIC_BASE = _script
+  ? _script.src.replace(/\/sql-editors\.js(?:\?.*)?$/, '')   // e.g. https://.../DataBeheer/main/_static
+  : (window.__STATIC_BASE__ || '/_static');
 const MONACO_BASE = `${STATIC_BASE}/monaco`;
 const SHARED_ID   = 'db:' + location.pathname; // one in-memory DB per page
 const clients     = new Map();                  // clientId -> output <div>
@@ -143,8 +146,8 @@ onReady(async () => {
 
     const seedUrlRaw = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
     const seedUrl = seedUrlRaw?.startsWith('/_static/')
-  ? STATIC_BASE + seedUrlRaw.slice('/_static'.length)
-  : seedUrlRaw;
+      ? STATIC_BASE + seedUrlRaw.slice('/_static'.length)
+      : seedUrlRaw;
     console.log('SQL editor seed DB URL:', seedUrl);
 
     let seedBuf = null;
