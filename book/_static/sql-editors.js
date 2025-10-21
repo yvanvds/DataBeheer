@@ -1,11 +1,18 @@
 // _static/sql-editors.js
 // --- Config ---
-const MONACO_BASE = '/_static/monaco';
+const STATIC_BASE = window.__STATIC_BASE__ || '/_static';
+const MONACO_BASE = `${STATIC_BASE}/monaco`;
 const SHARED_ID   = 'db:' + location.pathname; // one in-memory DB per page
 const clients     = new Map();                  // clientId -> output <div>
 let worker = null;
 
 // --- Utils ---
+function resolveStatic(url) {
+  return url && url.startsWith('/_static/')
+    ? STATIC_BASE + url.slice('/_static'.length)
+    : url;
+}
+
 function escapeHtml(s) {
   return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 }
@@ -38,7 +45,7 @@ function loadMonaco() {
   console.log('Loading monaco from', MONACO_BASE);
 
   return new Promise((resolve) => {
-    window.require.config({ paths: { 'vs': `${MONACO_BASE}/vs` } });
+    window.require.config({ baseUrl: MONACO_BASE, paths: { 'vs': `${MONACO_BASE}/vs` } });
     window.require(['vs/editor/editor.main'], () => resolve(window.monaco));
   });
 }
@@ -134,7 +141,8 @@ onReady(async () => {
   try {
     const monaco = await loadMonaco();
 
-    const seedUrl = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
+    const seedUrlRaw = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
+    const seedUrl = resolveStatic(seedUrlRaw);
     console.log('SQL editor seed DB URL:', seedUrl);
 
     let seedBuf = null;
@@ -158,7 +166,7 @@ onReady(async () => {
         if (out) out.textContent = 'Error: ' + (message || 'Unknown error');
         return;
       }
-      
+
       if (type !== 'result') return; // keep it simple; errors still show via console if thrown
       const { client, columns, rows, truncated } = payload || {};
       const out = clients.get(client);

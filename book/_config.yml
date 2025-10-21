@@ -14,12 +14,11 @@ execute:
 html:
   use_multitoc_numbering    : true                  # Default value (line can be removed), sets continuous numbering across parts/chapters, configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html). Same functionality per section can be defined with sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
   extra_head: |
-    <!-- Monaco AMD loader -->
-    <script src="/_static/monaco/vs/loader.js"></script>
-    <link rel="stylesheet" href="/_static/sql-editors.css">
+    <script>window.__STATIC_BASE__ = "{{ pathto('_static', 1) }}";</script>
+    <script src="{{ pathto('_static/monaco/vs/loader.js', 1) }}"></script>
+    <link rel="stylesheet" href="{{ pathto('_static/sql-editors.css', 1) }}">
   extra_footer: |
-    <!-- Our enhancer that turns SQL code-cells into Monaco editors -->
-    <script type="module" src="/_static/sql-editors.js"></script>
+    <script type="module" src="{{ pathto('_static/sql-editors.js', 1) }}"></script>
 
 sphinx:                                              # Options passed on to the underlying sphinx-parser
   extra_extensions:                                  # Sets a list of extensions to load by sphinx, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)

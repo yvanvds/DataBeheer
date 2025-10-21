@@ -1,5 +1,6 @@
 // _static/sql-worker.js  (classic worker)
-importScripts('/_static/sqljs/sql-wasm.js');
+const WORKER_BASE = self.location.pathname.replace(/\/[^\/]*$/, ''); // e.g. /DataBeheer/main/_static
+importScripts(WORKER_BASE + '/sqljs/sql-wasm.js');
 
 let SQL; // sql.js module factory
 const sessions = new Map(); // id -> { db }
@@ -7,7 +8,7 @@ const sessions = new Map(); // id -> { db }
 async function ensureSQL() {
   if (!SQL) {
     SQL = await initSqlJs({
-      locateFile: f => '/_static/sqljs/' + f
+      locateFile: f => WORKER_BASE + '/sqljs/' + f
     });
   }
 }
@@ -52,7 +53,7 @@ self.onmessage = async (ev) => {
         });
         return;
       }
-      
+
       if (!results.length) {
         self.postMessage({ id, type: 'result',
           payload: { columns: ['status'], rows: [['OK']], truncated:false }});
