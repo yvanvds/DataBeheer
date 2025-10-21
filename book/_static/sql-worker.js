@@ -1,24 +1,14 @@
-// _static/sql-worker.js  (classic worker with debug)
+// _static/sql-worker.js  (classic worker)
 importScripts('/_static/sqljs/sql-wasm.js');
 
 let SQL; // sql.js module factory
 const sessions = new Map(); // id -> { db }
-const DEBUG = true;
-
-function dbg(msg, data) {
-  if (!DEBUG) return;
-  // Send a structured debug message back to the main thread.
-  // You’ll log it there in worker.onmessage.
-  self.postMessage({ id: null, type: 'debug', payload: { msg, data } });
-}
 
 async function ensureSQL() {
   if (!SQL) {
-    dbg('ensureSQL: loading sql.js …', null);
     SQL = await initSqlJs({
       locateFile: f => '/_static/sqljs/' + f
     });
-    dbg('ensureSQL: sql.js loaded', { hasModule: !!SQL });
   }
 }
 
@@ -27,52 +17,22 @@ function truncate(values, limit=500) {
   return { values: truncated ? values.slice(0, limit) : values, truncated };
 }
 
-function inspectSeed(seedBuf) {
-  if (!seedBuf) return { present:false };
-  const byteLength = seedBuf.byteLength || 0;
-  const head = new Uint8Array(seedBuf, 0, Math.min(16, byteLength));
-  // SQLite files start with "SQLite format 3\0"
-  const magic = Array.from(head).map(b => String.fromCharCode(b)).join('');
-  const looksSqlite = magic.startsWith('SQLite format 3');
-  return { present:true, byteLength, headHex: [...head].map(b=>b.toString(16).padStart(2,'0')).join(' '), magic, looksSqlite };
-}
-
 self.onmessage = async (ev) => {
+  console.log('[worker msg]', ev.data); 
   const { id, type, payload } = ev.data || {};
+
   try {
     if (type === 'init') {
       await ensureSQL();
       const seedBuf = payload?.seedBuf; // ArrayBuffer, optional
-      const info = inspectSeed(seedBuf);
-      dbg('init: seed info', info);
-
-      let db;
-      try {
-        db = seedBuf
-          ? new SQL.Database(new Uint8Array(seedBuf))
-          : new SQL.Database();
-        dbg('init: database created', { usedSeed: !!seedBuf });
-      } catch (e) {
-        dbg('init: ERROR creating database', { error: String(e) });
-        throw e;
-      }
-
+      const db = seedBuf
+        ? new SQL.Database(new Uint8Array(seedBuf))
+        : new SQL.Database();
       sessions.set(id, { db });
       self.postMessage({
         id, type: 'result',
         payload: { columns: ['status'], rows: [['ready']], truncated:false }
       });
-
-      // Optional: emit a quick table count so you immediately see if seed loaded
-      try {
-        const r = db.exec(`SELECT count(*) AS n
-                           FROM sqlite_master
-                           WHERE type IN ('table','view');`);
-        const n = r?.[0]?.values?.[0]?.[0] ?? 0;
-        dbg('init: sqlite_master count', { tables_and_views: n });
-      } catch (e) {
-        dbg('init: sqlite_master probe failed', { error: String(e) });
-      }
     }
 
     else if (type === 'exec') {
@@ -80,24 +40,31 @@ self.onmessage = async (ev) => {
       if (!s || !s.db) throw new Error('No DB for this session.');
       const sql = payload?.sql || '';
       const limit = payload?.limit ?? 500;
-      dbg('exec: received SQL', { len: sql.length, preview: sql.slice(0, 120) });
+      const client = payload?.client;
 
       let results;
       try {
         results = s.db.exec(sql);
       } catch (e) {
-        dbg('exec: ERROR executing SQL', { error: String(e) });
-        throw e;
+        self.postMessage({
+          id, type: 'error',
+          payload: { client, message: String(e?.message || e) }
+        });
+        return;
       }
-
+      
       if (!results.length) {
         self.postMessage({ id, type: 'result',
           payload: { columns: ['status'], rows: [['OK']], truncated:false }});
+        self.postMessage({ id, type: 'result',
+          payload: { columns: ['status'], rows: [['OK']], truncated:false, client }});
       } else {
         const r = results[0];
         const { values, truncated } = truncate(r.values, limit);
         self.postMessage({ id, type: 'result',
           payload: { columns: r.columns, rows: values, truncated }});
+        self.postMessage({ id, type: 'result',
+          payload: { columns: r.columns, rows: values, truncated, client }});
       }
     }
 
@@ -106,20 +73,9 @@ self.onmessage = async (ev) => {
       if (s?.db) { try { s.db.close(); } catch {} }
       await ensureSQL();
       const seedBuf = payload?.seedBuf; // optional
-      const info = inspectSeed(seedBuf);
-      dbg('reset: seed info', info);
-
-      let db;
-      try {
-        db = seedBuf
-          ? new SQL.Database(new Uint8Array(seedBuf))
-          : new SQL.Database();
-        dbg('reset: database recreated', { usedSeed: !!seedBuf });
-      } catch (e) {
-        dbg('reset: ERROR creating database', { error: String(e) });
-        throw e;
-      }
-
+      const db = seedBuf
+        ? new SQL.Database(new Uint8Array(seedBuf))
+        : new SQL.Database();
       sessions.set(id, { db });
       self.postMessage({ id, type: 'result',
         payload: { columns: ['status'], rows: [['reset']], truncated:false }});
@@ -128,23 +84,12 @@ self.onmessage = async (ev) => {
     else if (type === 'schema') {
       const s = sessions.get(id);
       if (!s || !s.db) throw new Error('No DB for this session.');
-      let tables;
-      try {
-        tables = s.db.exec(`
-          SELECT name, type FROM sqlite_master
-          WHERE type IN ('table','view')
-          ORDER BY type, name;
-        `);
-        dbg('schema: listed items', { count: tables?.[0]?.values?.length || 0 });
-      } catch (e) {
-        dbg('schema: ERROR listing', { error: String(e) });
-        throw e;
-      }
+      const tables = s.db.exec(`
+        SELECT name, type FROM sqlite_master
+        WHERE type IN ('table','view')
+        ORDER BY type, name;
+      `);
       self.postMessage({ id, type: 'schema', payload: tables });
-    }
-
-    else {
-      dbg('unknown message type', { type });
     }
 
   } catch (e) {
