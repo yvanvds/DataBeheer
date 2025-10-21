@@ -142,7 +142,9 @@ onReady(async () => {
     const monaco = await loadMonaco();
 
     const seedUrlRaw = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
-    const seedUrl = resolveStatic(seedUrlRaw);
+    const seedUrl = seedUrlRaw?.startsWith('/_static/')
+  ? STATIC_BASE + seedUrlRaw.slice('/_static'.length)
+  : seedUrlRaw;
     console.log('SQL editor seed DB URL:', seedUrl);
 
     let seedBuf = null;
@@ -155,7 +157,7 @@ onReady(async () => {
     }
 
     // single worker for the page
-    worker = new Worker('/_static/sql-worker.js');
+    worker = new Worker(`${STATIC_BASE}/sql-worker.js`);
 
     // route results by `client`
     worker.onmessage = (ev) => {
