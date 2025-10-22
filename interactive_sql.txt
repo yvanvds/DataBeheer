@@ -1,0 +1,37 @@
+I am adding an interactive sql code cell to teachbooks, which is based on jupyter books.
+
+The project's structure is like this:
+
+- project root # contains .venv, .teachbooks, node_modules etc. Nothing important here.
+    - book     # contains the actual jupyter book
+        - chapters # contains the ipynb files
+        - _static
+            - db # databases we use are stored in here
+            - monaco # source code of the monaco editor
+            - sqljs # source of sqljs
+            - sql-editors.css
+            - sql-editors.js
+            - sql-worker.js
+
+The _config.yml file adds my javascript files in the header/ footer like this:
+
+html:
+  use_multitoc_numbering    : true                  # Default value (line can be removed), sets continuous numbering across parts/chapters, configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html). Same functionality per section can be defined with sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
+  extra_head: |
+    <script>window.__STATIC_BASE__ = "{{ pathto('_static', 1) }}";</script>
+    <script src="{{ pathto('_static/monaco/vs/loader.js', 1) }}"></script>
+    <link rel="stylesheet" href="{{ pathto('_static/sql-editors.css', 1) }}">
+  extra_footer: |
+    <script type="module" src="{{ pathto('_static/sql-editors.js', 1) }}"></script>
+
+The project implements these features already:
+
+- code-cells can be tagged with sql-live to enable the editor
+- an hmtl code-cell can be tagged with sql-db and should contain the path to the db for the page, like:
+    /_static/db/webshop.db
+  This code-cell will be detected by the editor and removed from the page. The database will be loaded by the
+  sql-worker and shared between all instances of the editor on that page.
+- all edits to the database are temporary and are (by design) lost when the user moves to another page.
+- The editor has a run button to execute sql queries
+- results of the queries are shown below the editor
+- there is a refresh button to reset the database to its initial state.

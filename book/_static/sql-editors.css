@@ -31,3 +31,228 @@ html[data-theme="dark"] .sql-live-btn:hover,
 body[data-theme="dark"] .sql-live-btn:hover {
   background: #444;
 }
+
+/* Overlay shell */
+.sql-schema-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: none; z-index: 9999;
+}
+.sql-schema-overlay.visible { display: block; }
+
+/* Panel */
+.sql-schema-panel {
+  width: min(1600px, 95vw);
+  height: min(95vh, 800px);
+  margin: 5vh auto 0;
+  background: #fff; color: #000;
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sql-schema-header {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .6rem .9rem; border-bottom: 1px solid #eee;
+  font-weight: 600;
+}
+.sql-schema-close {
+  margin-left: auto; cursor: pointer;
+  padding: .25rem .6rem; border: 1px solid #ccc; border-radius: 6px; background: #fafafa;
+}
+.sql-schema-body {
+  padding: .9rem; overflow: auto; flex: 1;
+}
+
+/* Dark mode */
+html[data-theme="dark"] .sql-schema-panel,
+body[data-theme="dark"] .sql-schema-panel {
+  background: #1e1e1e; color: #eee; border: 1px solid #333;
+}
+html[data-theme="dark"] .sql-schema-header { border-bottom: 1px solid #333; }
+html[data-theme="dark"] .sql-schema-close {
+  background: #333; border: 1px solid #555; color: #eee;
+}
+html[data-theme="dark"] .sql-schema-close:hover { background: #444; }
+
+/* Schema list */
+.sql-schema-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.sql-schema-section h3 { margin: .25rem 0 .5rem; font-size: 1rem; }
+.sql-schema-list { border: 1px solid #eee; border-radius: 8px; overflow: hidden; background-color: #eee;}
+.sql-schema-list-item { padding: .5rem .75rem; border-top: 1px solid #eee; }
+.sql-schema-list-item:first-child { border-top: none; }
+.sql-schema-empty { opacity: .7; font-style: italic; padding: .25rem 0; }
+
+/* Dark */
+html[data-theme="dark"] .sql-schema-list { border-color: #333; background-color: #23272e;  }
+html[data-theme="dark"] .sql-schema-list-item { border-top-color: #333; }
+
+/* Tabs */
+.sql-schema-tabs {
+  display: flex; gap: .25rem; border-bottom: 1px solid #eee; margin-bottom: .75rem;
+}
+.sql-schema-tab {
+  padding: .4rem .7rem; border: 1px solid transparent; border-radius: 6px 6px 0 0;
+  cursor: pointer; font-weight: 600;
+}
+.sql-schema-tab[aria-selected="true"] {
+  border-color: #ddd; border-bottom-color: #fff; background: #fff; color: #000;
+}
+.sql-schema-tab[aria-selected="false"] { color: #555; }
+
+.sql-schema-tabpanel { display: none; }
+.sql-schema-tabpanel.active { display: block; }
+
+/* Dark */
+html[data-theme="dark"] .sql-schema-tabs { border-bottom-color: #333; }
+html[data-theme="dark"] .sql-schema-tab[aria-selected="true"] {
+  border-color: #333; border-bottom-color: #1e1e1e; background: #1e1e1e; color: #eee;
+}
+html[data-theme="dark"] .sql-schema-tab[aria-selected="false"] { color: #bbb; }
+
+.sql-data-preview {
+  margin-top: 1rem;
+  max-height: 350px;
+  overflow: auto;
+  border-top: 1px solid #eee;
+  padding-top: .75rem;
+}
+html[data-theme="dark"] .sql-data-preview { border-top-color: #333; }
+
+/* Accordion items */
+.sql-schema-list-item {
+  cursor: pointer;
+}
+.sql-acc-body {
+  display: none;
+  padding: .5rem .75rem .75rem;
+  border-top: 1px dashed #ddd;
+}
+.sql-acc-body.visible { display: block; }
+
+/* Columns table */
+.sql-columns {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .95em;
+}
+.sql-columns th,
+.sql-columns td {
+  border: 1px solid #eee;
+  padding: .25rem .5rem;
+  text-align: left;
+}
+.sql-col-badge {
+  font-size: .8em;
+  opacity: .8;
+  padding: .05rem .35rem;
+  border: 1px solid #ccc;
+  border-radius: .5rem;
+  margin-left: .35rem;
+}
+
+/* Make the schema section scroll if tall */
+.sql-schema-sections {
+  max-height: 60vh;       /* keeps within overlay */
+  overflow: auto;         /* vertical scrollbar if needed */
+  padding-right: .25rem;  /* space for scrollbar */
+}
+
+/* Dark mode tweaks */
+html[data-theme="dark"] .sql-acc-body { border-top-color: #333; }
+html[data-theme="dark"] .sql-columns th,
+html[data-theme="dark"] .sql-columns td { border-color: #333; }
+html[data-theme="dark"] .sql-col-badge { border-color: #555; }
+
+/* ---------- Subtle color tokens ---------- */
+:root {
+  --sql-accent-bg: #f6f8fa;        /* header-ish bg (light) */
+  --sql-accent-border: #e2e7ee;    /* light borders */
+  --sql-accent-text: #0f172a;      /* near-slate text */
+  --sql-muted-bg: #fafafa;         /* muted row bg */
+}
+
+html[data-theme="dark"] {
+  --sql-accent-bg: #23272e;        /* header-ish bg (dark) */
+  --sql-accent-border: #2f3640;    /* dark borders */
+  --sql-accent-text: #eaeef5;      /* light text */
+  --sql-muted-bg: #1a1d22;         /* muted row bg (dark) */
+}
+
+/* ---------- Schema list: focusable headers + accordion ---------- */
+.sql-schema-list-item {
+  cursor: pointer;
+  border-top: 1px solid var(--sql-accent-border);
+}
+.sql-schema-list-item:first-child { border-top: none; }
+
+/* The clickable header (behaves like a button) */
+.sql-acc-head {
+  padding: .5rem .75rem;
+  background: var(--sql-accent-bg);
+  color: var(--sql-accent-text);
+  outline: none;
+}
+.sql-acc-head:hover { filter: brightness(0.98); }
+.sql-acc-head:focus-visible {
+  box-shadow: 0 0 0 2px rgba(99,102,241,.35);
+  border-radius: 4px;
+}
+
+/* Accordion body */
+.sql-acc-body {
+  display: none;
+  padding: .5rem .75rem .75rem;
+  border-top: 1px dashed var(--sql-accent-border);
+  background: var(--sql-muted-bg);
+}
+.sql-acc-body.visible { display: block; }
+
+/* ---------- Columns table in Schema tab ---------- */
+.sql-columns {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .95em;
+  table-layout: auto;
+}
+.sql-columns thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sql-accent-bg);
+  color: var(--sql-accent-text);
+  border-bottom: 1px solid var(--sql-accent-border);
+}
+.sql-columns th,
+.sql-columns td {
+  border: 1px solid var(--sql-accent-border);
+  padding: .35rem .55rem;
+  text-align: left;
+}
+
+/* ---------- Make Schema pane scroll if content is tall ---------- */
+.sql-schema-sections {
+  max-height: 60vh;
+  overflow: auto;
+  padding-right: .25rem;
+}
+
+/* ---------- Data tab preview table (readability) ---------- */
+.sqljs-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;       /* allow natural column widths */
+}
+.sqljs-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sql-accent-bg);
+  color: var(--sql-accent-text);
+  border-bottom: 1px solid var(--sql-accent-border);
+}
+.sqljs-table th,
+.sqljs-table td {
+  border: 1px solid var(--sql-accent-border);
+  padding: .35rem .6rem;    /* <-- spacing between columns */
+  vertical-align: top;
+  word-break: break-word;   /* wrap long content */
+}

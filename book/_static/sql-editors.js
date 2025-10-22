@@ -85,9 +85,10 @@ function wrapCell(cell, initialSql, preToHide) {
   wrap.className = 'sql-live-wrap';
   wrap.innerHTML = `
     <div class="sql-live-toolbar">
-      <span class="title">Interactive SQL (Monaco)</span>
+      <span class="title">Interactive SQL</span>
       <button class="sql-live-btn run">Run</button>
       <button class="sql-live-btn reset">Reset</button>
+      <button class="sql-live-btn schema">Schema</button>
       <span class="sql-live-note">Ctrl/Cmd+Enter to run</span>
     </div>
     <div class="sql-live-editor"></div>
@@ -99,6 +100,7 @@ function wrapCell(cell, initialSql, preToHide) {
     outputEl: wrap.querySelector('.sql-live-output'),
     runBtn  : wrap.querySelector('.run'),
     resetBtn: wrap.querySelector('.reset'),
+    schemaBtn: wrap.querySelector('.schema'),
   };
 }
 
@@ -136,6 +138,13 @@ function initEditors(monaco, seedBuf) {
       });
       clients.forEach(el => el.textContent = 'Output will appear here.');
     });
+
+    ui.schemaBtn.addEventListener('click', async () => {
+      const mod = await import(`${STATIC_BASE}/sql-overlay.js`);
+      mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
+    });
+
+
   });
 }
 
