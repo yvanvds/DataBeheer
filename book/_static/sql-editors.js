@@ -162,10 +162,9 @@ onReady(async () => {
     let seedBuf = null;
     if (seedUrl) {
       const res = await fetch(seedUrl);
-      console.debug('[seed] fetch', seedUrl, res.status, res.statusText);
+      console.log('[seed] fetch', seedUrl, res.status, res.statusText);
       if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
       seedBuf = await res.arrayBuffer();
-      console.debug('[seed] bytes', seedBuf.byteLength);
     }
 
     // single worker for the page
@@ -195,10 +194,45 @@ onReady(async () => {
       payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {}
     });
 
+    await waitForWorkerReady(worker, SHARED_ID);   // ← ensure session exists
+
     // create editors
     initEditors(monaco, seedBuf);
 
+    // … add completion support
+    const { initSqlCompletion } = await import(`${STATIC_BASE}/sql-completion.js`);
+
+    await initSqlCompletion({
+      monaco,
+      worker,
+      sharedId: SHARED_ID,
+      getEditors: () => [editor],  // keep for future use; harmless today
+    });
   } catch (e) {
     console.error('Monaco/SQL init failed:', e);
   }
 });
+
+
+function waitForWorkerReady(worker, id) {
+  return new Promise((resolve, reject) => {
+    const onMsg = (ev) => {
+      const { id: mid, type, payload } = ev.data || {};
+      if (mid !== id) return;
+
+      if (type === 'result' &&
+          Array.isArray(payload?.columns) &&
+          payload.columns[0] === 'status' &&
+          Array.isArray(payload?.rows) &&
+          payload.rows[0]?.[0] === 'ready') {
+        worker.removeEventListener('message', onMsg);
+        resolve();
+      }
+      if (type === 'error') {
+        worker.removeEventListener('message', onMsg);
+        reject(new Error(payload?.message || 'Worker error'));
+      }
+    };
+    worker.addEventListener('message', onMsg);
+  });
+}

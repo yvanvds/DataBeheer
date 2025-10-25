@@ -12,6 +12,7 @@ The project's structure is like this:
             - sql-editors.css
             - sql-editors.js
             - sql-worker.js
+            - sql-overlay.js
 
 The _config.yml file adds my javascript files in the header/ footer like this:
 
@@ -35,3 +36,6 @@ The project implements these features already:
 - The editor has a run button to execute sql queries
 - results of the queries are shown below the editor
 - there is a refresh button to reset the database to its initial state.
+- there is a button that opens up an overlay where the user can browse the db schema,
+  including the columns for each table. In a second tab, the first 100 lines of each 
+  table and field can be viewed.
