@@ -10,4 +10,10 @@ parts:
     restart_numbering: false        # Default value (line can be removed), whether to restart numbering for this part, configuration part of TeachBooks' version of sphinx-external-toc (https://github.com/TeachBooks/sphinx-external-toc?tab=readme-ov-file#toc-tree-options)
     chapters:
     - file: chapters/SQL/01_Starten_met_sql
+    - file: chapters/SQL/02_Meer_opties_voor_WHERE
+    - file: chapters/SQL/03_JOIN
+    - file: chapters/SQL/04_GROUP_BY
+    - file: chapters/SQL/05_HAVING
+    - file: chapters/SQL/06_Herhaling
+
       
