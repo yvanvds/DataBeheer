@@ -15,5 +15,10 @@ parts:
     - file: chapters/SQL/04_GROUP_BY
     - file: chapters/SQL/05_HAVING
     - file: chapters/SQL/06_Herhaling
-
+  - caption: Databases Ontwerpen met ERD's
+    numbered: false
+    style: numerical
+    restart_numbering: false
+    chapters:
+    - file: chapters/ERD/01_Inleiding_tot_ERD
       
