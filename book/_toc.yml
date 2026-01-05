@@ -21,4 +21,5 @@ parts:
     restart_numbering: false
     chapters:
     - file: chapters/ERD/01_Inleiding_tot_ERD
+    - file: chapters/ERD/02_normalisatie
       
