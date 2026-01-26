@@ -22,4 +22,5 @@ parts:
     chapters:
     - file: chapters/ERD/01_Inleiding_tot_ERD
     - file: chapters/ERD/02_normalisatie
+    - file: chapters/ERD/03_de_voetbal
       
