@@ -24,5 +24,10 @@ parts:
     - file: chapters/ERD/02_normalisatie
     - file: chapters/ERD/03_de_voetbal
     - file: chapters/ERD/04_de_cafetaria
-
+  - caption: Big Data
+    numbered: false
+    style: numerical
+    restart_numbering: false
+    chapters:
+    - file: chapters/BIG_DATA/01_Inleiding
       
