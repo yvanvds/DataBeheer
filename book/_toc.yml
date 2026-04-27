@@ -30,4 +30,5 @@ parts:
     restart_numbering: false
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
+    - file: chapters/BIG_DATA/02_Onderzoeksopdracht
       
