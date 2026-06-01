@@ -32,4 +32,5 @@ parts:
     - file: chapters/BIG_DATA/01_Inleiding
     - file: chapters/BIG_DATA/02_Onderzoeksopdracht
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
+    - file: chapters/BIG_DATA/04_Overhoring
       
