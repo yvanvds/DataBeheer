@@ -26,6 +26,7 @@ parts:
       sections:
       - file: chapters/SQL/05b_AdventureWorks
       - file: chapters/SQL/05c_Detective
+      - file: chapters/SQL/05d_Query_race
     - file: chapters/SQL/06_Herhaling
   - caption: Databases Ontwerpen met ERD's
     numbered: false
@@ -34,17 +35,22 @@ parts:
     chapters:
     - file: chapters/ERD/01_Inleiding_tot_ERD
     - file: chapters/ERD/02_normalisatie
-    - file: chapters/ERD/03_de_voetbal
-    - file: chapters/ERD/04_de_cafetaria
+    - file: chapters/ERD/03_ERD_tekenen
+    - file: chapters/ERD/04_de_voetbal
+    - file: chapters/ERD/05_de_cafetaria
   - caption: Big Data
     numbered: false
     style: numerical
     restart_numbering: false
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
-    - file: chapters/BIG_DATA/02_Onderzoeksopdracht
-      title: "2. Onderzoeksopdracht: werkzaamheidsgraad"
+    - file: chapters/BIG_DATA/02_Power_BI
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
-      title: "3. Onderzoeksopdracht: belastingdruk"
-    - file: chapters/BIG_DATA/04_Overhoring
+      title: "3. Onderzoeksopdracht: werkloosheid"
+    - file: chapters/BIG_DATA/04_Liegen_met_grafieken
+    - file: chapters/BIG_DATA/05_Onderzoeksopdracht
+      title: "5. Onderzoeksopdracht: werkzaamheidsgraad"
+    - file: chapters/BIG_DATA/06_Onderzoeksopdracht
+      title: "6. Onderzoeksopdracht: belastingdruk"
+    - file: chapters/BIG_DATA/07_Overhoring
       
