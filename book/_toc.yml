@@ -26,6 +26,7 @@ parts:
       sections:
       - file: chapters/SQL/05b_AdventureWorks
       - file: chapters/SQL/05c_Detective
+      - file: chapters/SQL/05d_Query_race
     - file: chapters/SQL/06_Herhaling
   - caption: Databases Ontwerpen met ERD's
     numbered: false
