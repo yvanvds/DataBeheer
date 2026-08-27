@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" font-family="Consolas, 'Courier New', monospace" font-size="13">
+  <rect x="0" y="0" width="960" height="480" fill="#ffffff"/>
+
+  <!-- ================= customers ================= -->
+  <g>
+    <rect x="30" y="40" width="220" height="188" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+    <rect x="30" y="40" width="220" height="28" fill="#e8e8e8" stroke="#333333" stroke-width="1.5"/>
+    <text x="140" y="59" text-anchor="middle" font-weight="bold" fill="#111111">customers</text>
+    <text x="42" y="88"  fill="#111111">customer_id</text><text x="238" y="88"  text-anchor="end" fill="#666666">PK</text>
+    <text x="42" y="110" fill="#111111">first_name</text>
+    <text x="42" y="132" fill="#111111">last_name</text>
+    <text x="42" y="154" fill="#111111">email</text>
+    <text x="42" y="176" fill="#111111">city</text>
+    <text x="42" y="198" fill="#111111">postal_code</text>
+    <text x="42" y="220" fill="#111111">join_date</text>
+  </g>
+
+  <!-- ================= orders ================= -->
+  <g>
+    <rect x="330" y="40" width="200" height="122" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+    <rect x="330" y="40" width="200" height="28" fill="#e8e8e8" stroke="#333333" stroke-width="1.5"/>
+    <text x="430" y="59" text-anchor="middle" font-weight="bold" fill="#111111">orders</text>
+    <text x="342" y="88"  fill="#111111">order_id</text><text x="518" y="88"  text-anchor="end" fill="#666666">PK</text>
+    <text x="342" y="110" fill="#111111">customer_id</text><text x="518" y="110" text-anchor="end" fill="#666666">FK</text>
+    <text x="342" y="132" fill="#111111">order_date</text>
+    <text x="342" y="154" fill="#111111">status</text>
+  </g>
+
+  <!-- ================= order_lines ================= -->
+  <g>
+    <rect x="640" y="40" width="210" height="144" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+    <rect x="640" y="40" width="210" height="28" fill="#e8e8e8" stroke="#333333" stroke-width="1.5"/>
+    <text x="745" y="59" text-anchor="middle" font-weight="bold" fill="#111111">order_lines</text>
+    <text x="652" y="88"  fill="#111111">order_line_id</text><text x="838" y="88"  text-anchor="end" fill="#666666">PK</text>
+    <text x="652" y="110" fill="#111111">order_id</text><text x="838" y="110" text-anchor="end" fill="#666666">FK</text>
+    <text x="652" y="132" fill="#111111">product_id</text><text x="838" y="132" text-anchor="end" fill="#666666">FK</text>
+    <text x="652" y="154" fill="#111111">quantity</text>
+    <text x="652" y="176" fill="#111111">unit_price</text>
+  </g>
+
+  <!-- ================= products ================= -->
+  <g>
+    <rect x="640" y="300" width="210" height="144" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+    <rect x="640" y="300" width="210" height="28" fill="#e8e8e8" stroke="#333333" stroke-width="1.5"/>
+    <text x="745" y="319" text-anchor="middle" font-weight="bold" fill="#111111">products</text>
+    <text x="652" y="348" fill="#111111">product_id</text><text x="838" y="348" text-anchor="end" fill="#666666">PK</text>
+    <text x="652" y="370" fill="#111111">name</text>
+    <text x="652" y="392" fill="#111111">category</text>
+    <text x="652" y="414" fill="#111111">unit_price</text>
+    <text x="652" y="436" fill="#111111">stock</text>
+  </g>
+
+  <!-- ============ relatie: customers (1) - orders (0..n) ============ -->
+  <line x1="250" y1="110" x2="330" y2="110" stroke="#333333" stroke-width="1.5"/>
+  <line x1="260" y1="101" x2="260" y2="119" stroke="#333333" stroke-width="1.5"/>
+  <line x1="272" y1="101" x2="272" y2="119" stroke="#333333" stroke-width="1.5"/>
+  <circle cx="302" cy="110" r="6" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+  <line x1="312" y1="110" x2="330" y2="101" stroke="#333333" stroke-width="1.5"/>
+  <line x1="312" y1="110" x2="330" y2="119" stroke="#333333" stroke-width="1.5"/>
+
+  <!-- ============ relatie: orders (1) - order_lines (1..n) ============ -->
+  <line x1="530" y1="110" x2="640" y2="110" stroke="#333333" stroke-width="1.5"/>
+  <line x1="540" y1="101" x2="540" y2="119" stroke="#333333" stroke-width="1.5"/>
+  <line x1="552" y1="101" x2="552" y2="119" stroke="#333333" stroke-width="1.5"/>
+  <line x1="610" y1="101" x2="610" y2="119" stroke="#333333" stroke-width="1.5"/>
+  <line x1="622" y1="110" x2="640" y2="101" stroke="#333333" stroke-width="1.5"/>
+  <line x1="622" y1="110" x2="640" y2="119" stroke="#333333" stroke-width="1.5"/>
+
+  <!-- ============ relatie: products (1) - order_lines (0..n) ============ -->
+  <line x1="745" y1="300" x2="745" y2="184" stroke="#333333" stroke-width="1.5"/>
+  <line x1="736" y1="288" x2="754" y2="288" stroke="#333333" stroke-width="1.5"/>
+  <line x1="736" y1="276" x2="754" y2="276" stroke="#333333" stroke-width="1.5"/>
+  <circle cx="745" cy="212" r="6" fill="#ffffff" stroke="#333333" stroke-width="1.5"/>
+  <line x1="745" y1="200" x2="736" y2="184" stroke="#333333" stroke-width="1.5"/>
+  <line x1="745" y1="200" x2="754" y2="184" stroke="#333333" stroke-width="1.5"/>
+</svg>
