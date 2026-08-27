@@ -31,6 +31,8 @@ parts:
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
     - file: chapters/BIG_DATA/02_Onderzoeksopdracht
+      title: "2. Onderzoeksopdracht: werkzaamheidsgraad"
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
+      title: "3. Onderzoeksopdracht: belastingdruk"
     - file: chapters/BIG_DATA/04_Overhoring
       
