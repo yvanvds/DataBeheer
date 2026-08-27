@@ -10,10 +10,22 @@ parts:
     restart_numbering: false        # Default value (line can be removed), whether to restart numbering for this part, configuration part of TeachBooks' version of sphinx-external-toc (https://github.com/TeachBooks/sphinx-external-toc?tab=readme-ov-file#toc-tree-options)
     chapters:
     - file: chapters/SQL/01_Starten_met_sql
+      sections:
+      - file: chapters/SQL/01b_AdventureWorks
     - file: chapters/SQL/02_Meer_opties_voor_WHERE
+      sections:
+      - file: chapters/SQL/02b_AdventureWorks
     - file: chapters/SQL/03_JOIN
+      sections:
+      - file: chapters/SQL/03b_AdventureWorks
+      - file: chapters/SQL/03c_Detective
     - file: chapters/SQL/04_GROUP_BY
+      sections:
+      - file: chapters/SQL/04b_AdventureWorks
     - file: chapters/SQL/05_HAVING
+      sections:
+      - file: chapters/SQL/05b_AdventureWorks
+      - file: chapters/SQL/05c_Detective
     - file: chapters/SQL/06_Herhaling
   - caption: Databases Ontwerpen met ERD's
     numbered: false
@@ -31,6 +43,8 @@ parts:
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
     - file: chapters/BIG_DATA/02_Onderzoeksopdracht
+      title: "2. Onderzoeksopdracht: werkzaamheidsgraad"
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
+      title: "3. Onderzoeksopdracht: belastingdruk"
     - file: chapters/BIG_DATA/04_Overhoring
       
