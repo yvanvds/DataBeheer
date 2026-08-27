@@ -43,9 +43,12 @@ parts:
     restart_numbering: false
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
-    - file: chapters/BIG_DATA/02_Onderzoeksopdracht
-      title: "2. Onderzoeksopdracht: werkzaamheidsgraad"
+    - file: chapters/BIG_DATA/02_Power_BI
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
-      title: "3. Onderzoeksopdracht: belastingdruk"
-    - file: chapters/BIG_DATA/04_Overhoring
+      title: "3. Onderzoeksopdracht: werkloosheid"
+    - file: chapters/BIG_DATA/04_Onderzoeksopdracht
+      title: "4. Onderzoeksopdracht: werkzaamheidsgraad"
+    - file: chapters/BIG_DATA/05_Onderzoeksopdracht
+      title: "5. Onderzoeksopdracht: belastingdruk"
+    - file: chapters/BIG_DATA/06_Overhoring
       
