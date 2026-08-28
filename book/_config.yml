@@ -26,6 +26,7 @@ sphinx:                                              # Options passed on to the 
     - teachbooks_favourites                          # Gives you a starter package of extensions to use in your book, replace with individual extensions if you prefer some extensions not to be included (https://github.com/TeachBooks/TeachBooks-Favourites)
   local_extensions:                                  # Local extensions loaded by sphinx, path is relative to this file (https://jupyterbook.org/en/stable/advanced/sphinx.html#local-sphinx-extensions)
     sanitize_static_assets: _ext                     # Voorkomt dubbele/foute scriptinjectie die consolefouten gaf (issue #24), zie _ext/sanitize_static_assets.py
+    harden_theme_storage: _ext                       # Hardt de localStorage-toegang van de gevendorde theme-scripts (consolefouten bij eerste bezoek/geblokkeerde opslag, issues #29/#26), zie _ext/harden_theme_storage.py
   config:
     language: nl                                     # Defines language (English) of everything except the content itself. For Dutch: replace with `nl`, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     html_css_files:                                  # Plink Labs huisstijl: webfonts Fraunces / Hanken Grotesk / Space Mono via Google Fonts (tokens en thema staan in _static/plink-theme.css en _static/plink/tokens.css, die automatisch geladen worden)
