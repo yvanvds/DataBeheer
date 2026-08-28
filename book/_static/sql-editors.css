@@ -102,9 +102,10 @@ html[data-theme="dark"] {
   font-size: .875rem;
   color: var(--sql-error);
 }
-/* Downloadbalk (#30): één knop per pagina, onder de laatste interactieve cel,
-   die alle celinhoud als één .sql-bestand exporteert. Zelfde vlakke taal als
-   de toolbar: hairline, raised vlak, mono-eyebrow. */
+/* Balk "Mijn werk" (#30 download, #35 upload): één per pagina, onder de
+   laatste interactieve cel. Zelfde vlakke taal als de toolbar: hairline,
+   raised vlak, mono-eyebrow. De knoppen staan samen rechts; de statusregel
+   van de upload krijgt een eigen regel eronder. */
 .sql-download-bar {
   display: flex; gap: .5rem .75rem; align-items: center;
   flex-wrap: wrap;
@@ -123,7 +124,15 @@ html[data-theme="dark"] {
   color: var(--sql-text-muted);
 }
 .sql-download-bar .sql-live-note { flex: 1 1 16rem; }
-.sql-download-bar .sql-live-btn { margin-left: auto; }
+.sql-download-bar .actions {
+  display: flex; gap: .5rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.sql-download-bar .sql-upload-status {
+  flex-basis: 100%;
+  color: var(--sql-text);
+}
 
 /* ── CodeMirror: syntaxkleuren (klassen uit sql-editors.js) ──
    Chrome-styling (achtergrond, gutter, selectie, tooltip) zit in het

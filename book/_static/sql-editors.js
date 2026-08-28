@@ -17,8 +17,10 @@
 //   - leerlingqueries worden per cel bewaard in localStorage (#14): bij het
 //     heropenen van de pagina staat het eigen werk er weer, en de knop
 //     "Startcode" zet de originele opgave terug;
-//   - onder de laatste cel staat een knop "Download mijn queries" (#30) die
-//     alle celinhoud van de pagina als één .sql-bestand exporteert;
+//   - onder de laatste cel staat de balk "Mijn werk": "Download mijn queries"
+//     (#30) exporteert alle celinhoud van de pagina als één .sql-bestand en
+//     "Upload mijn queries" (#35) zet zo'n bestand weer terug (bestandsformaat
+//     in sql-queries-file.js);
 //   - Run voert de selectie uit, of anders het statement onder de cursor
 //     (subtiel gemarkeerd); "Run alles" (Mod-Shift-Enter) voert de hele cel
 //     uit (#34, statementgrenzen in sql-statements.js).
@@ -33,6 +35,7 @@ import {
   sql, SQLite, tags,
 } from './codemirror/codemirror.js';
 import { splitStatements, statementAt } from './sql-statements.js';
+import { buildQueriesFile, parseQueriesFile, pageName } from './sql-queries-file.js';
 
 // --- Config ---
 const STATIC_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
@@ -420,25 +423,24 @@ async function openSchema() {
   mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
 }
 
-// --- Download van het eigen werk (#30) ---
-// Eén knop per pagina die de actuele inhoud van alle interactieve cellen als
-// één .sql-bestand exporteert, met een commentaarkop per cel ("-- cel 3").
+// --- Mijn werk: download (#30) en upload (#35) van het eigen werk ---
+// Eén balk per pagina, onder de laatste interactieve cel. "Download mijn
+// queries" exporteert de actuele inhoud van alle cellen als één .sql-bestand
+// met een commentaarkop per cel ("-- cel 3"; formaat in sql-queries-file.js).
 // Handig indienformaat, en de aangeraden uitweg voor wie op meerdere
 // toestellen werkt: de opslag uit #14 is per browser/toestel. De export leest
 // rechtstreeks uit de editors (niet uit localStorage), dus hij werkt ook als
 // opslag geblokkeerd is.
 function exportFileName() {
-  const page = (location.pathname.split('/').pop() || '')
-    .replace(/\.html?$/i, '')
-    .replace(/[^\w.-]+/g, '_');
+  const page = pageName(location.pathname).replace(/[^\w.-]+/g, '_');
   return `queries-${page || 'pagina'}.sql`;
 }
 
 function buildSqlExport() {
-  const parts = editorsApi.map(
-    ed => `-- cel ${ed.index + 1}\n${ed.getValue().trim()}\n`,
+  return buildQueriesFile(
+    location.pathname,
+    editorsApi.map(ed => ({ index: ed.index, sql: ed.getValue() })),
   );
-  return `-- Mijn queries — ${location.pathname}\n\n${parts.join('\n')}`;
 }
 
 function downloadQueries() {
@@ -453,15 +455,103 @@ function downloadQueries() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function addDownloadBar(lastCell) {
+// "Upload mijn queries" is de tegenhanger: het leest zo'n bestand en zet de
+// inhoud per cel terug via setValue(), waarna de gewone opslag (#14) hem
+// meteen bewaart — of niet, als opslag geblokkeerd is; het werk staat dan toch
+// live in de editors. Cellen met eigen werk (≠ startcode) worden pas
+// overschreven na bevestiging, net als een bestand van een andere pagina.
+// Komt het bestand van een oudere versie van de pagina (ander celaantal), dan
+// wordt teruggezet wat matcht en gemeld wat niet kon.
+function listCells(indexes) {
+  const nums = indexes.map(i => i + 1);
+  if (nums.length === 1) return `cel ${nums[0]}`;
+  return `cellen ${nums.slice(0, -1).join(', ')} en ${nums[nums.length - 1]}`;
+}
+
+function planImport(parsed) {
+  const restore = [];   // { editor, sql } — cellen die op deze pagina bestaan
+  const missing = [];   // indexen uit het bestand zonder cel op deze pagina
+  const overwrite = []; // indexen met eigen werk dat door het bestand verandert
+  for (const { index, sql } of parsed.cells) {
+    const editor = editorsApi[index];
+    if (!editor) { missing.push(index); continue; }
+    const current = editor.getValue();
+    if (current !== sql && current !== editor.initialValue) overwrite.push(index);
+    restore.push({ editor, sql });
+  }
+  return { restore, missing, overwrite };
+}
+
+function importQueries(text, report) {
+  const parsed = parseQueriesFile(text);
+  const { restore, missing, overwrite } = planImport(parsed);
+  if (!restore.length && !missing.length) {
+    report('Geen cellen gevonden in dit bestand. Kies een bestand dat je met "Download mijn queries" bewaarde.');
+    return;
+  }
+
+  const warnings = [];
+  if (parsed.page && pageName(parsed.page) !== pageName(location.pathname)) {
+    warnings.push(`Dit bestand komt van een andere pagina (${pageName(parsed.page)}).`);
+  }
+  if (overwrite.length) {
+    const which = listCells(overwrite);
+    warnings.push(
+      `${which[0].toUpperCase()}${which.slice(1)} van deze pagina ` +
+      `${overwrite.length === 1 ? 'bevat' : 'bevatten'} eigen werk dat door het bestand overschreven wordt.`,
+    );
+  }
+  if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nToch terugzetten?`)) {
+    report('Upload geannuleerd — er is niets gewijzigd.');
+    return;
+  }
+
+  restore.forEach(({ editor, sql }) => {
+    if (editor.getValue() !== sql) editor.setValue(sql);
+    cells[editor.index].flush?.(); // meteen bewaren (#14), niet pas na de debounce
+  });
+
+  const notes = [];
+  if (restore.length) notes.push(`Teruggezet: ${listCells(restore.map(r => r.editor.index))}.`);
+  if (missing.length) {
+    const count = editorsApi.length;
+    notes.push(
+      `Niet teruggezet: ${listCells(missing)} — deze pagina heeft ${count} ${count === 1 ? 'cel' : 'cellen'}; ` +
+      'het bestand komt wellicht van een oudere versie van de pagina.',
+    );
+  }
+  report(notes.join(' '));
+}
+
+function addMyWorkBar(lastCell) {
   const bar = document.createElement('div');
   bar.className = 'sql-download-bar';
   bar.innerHTML = `
     <span class="title">Mijn werk</span>
-    <span class="sql-live-note">Je werk wordt per browser bewaard — als bestand neem je het mee naar een ander toestel, of dien je het in.</span>
-    <button class="sql-live-btn download">Download mijn queries</button>
+    <span class="sql-live-note">Je werk wordt per browser bewaard. Download het als bestand om het in te dienen of mee te nemen naar een ander toestel; met Upload zet je zo'n bestand hier weer terug.</span>
+    <span class="actions">
+      <button class="sql-live-btn download" title="Bewaart de inhoud van alle cellen op deze pagina als één .sql-bestand">Download mijn queries</button>
+      <button class="sql-live-btn upload" title="Zet de cellen van deze pagina terug uit een bestand van &quot;Download mijn queries&quot;">Upload mijn queries</button>
+      <input class="sql-upload-input" type="file" accept=".sql,.txt,text/plain,application/sql" hidden>
+    </span>
+    <span class="sql-live-note sql-upload-status" role="status" aria-live="polite" hidden></span>
   `;
+  const input = bar.querySelector('.sql-upload-input');
+  const status = bar.querySelector('.sql-upload-status');
+  const report = (message) => { status.textContent = message; status.hidden = false; };
+
   bar.querySelector('.download').addEventListener('click', downloadQueries);
+  bar.querySelector('.upload').addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = ''; // hetzelfde bestand mag meteen opnieuw gekozen worden
+    if (!file) return;
+    try {
+      importQueries(await file.text(), report);
+    } catch (e) {
+      report(`Bestand lezen mislukt: ${e?.message || e}`);
+    }
+  });
   lastCell.after(bar);
 }
 
@@ -572,8 +662,8 @@ function initEditors(blocks) {
     });
   });
 
-  // Downloadknop (#30) onder de laatste interactieve cel van de pagina.
-  addDownloadBar(blocks[blocks.length - 1].cell);
+  // Balk "Mijn werk" (download #30, upload #35) onder de laatste interactieve cel.
+  addMyWorkBar(blocks[blocks.length - 1].cell);
 
   // Nog niet weggeschreven wijzigingen (debounce) alsnog bewaren bij het
   // verlaten of verbergen van de pagina.

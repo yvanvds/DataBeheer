@@ -8,7 +8,8 @@
    met consolefouten ("Unexpected token 'export'", "importScripts is not
    defined") tot gevolg. ``_prune_static_js`` houdt alleen ``sql-editors.js``
    over — als ES-module (``type="module"``), zodat het de CodeMirror-bundel,
-   ``sql-statements.js`` en het overlay via ``import`` kan laden; de rest
+   ``sql-statements.js``, ``sql-queries-file.js`` en het overlay via
+   ``import`` kan laden; de rest
    wordt on demand geladen via ``import()`` of ``new Worker(...)``.
 
 2. Sphinx (t/m 7.x) zet inline scripts (``add_js_file(None, body=...)``) van
@@ -51,6 +52,7 @@ _DROP_PREFIXES = ("codemirror/", "sqljs/", "tippy/", "mathjax/")
 _DROP_JS = {
     "sql-overlay.js",  # ES-module, dynamisch geimporteerd door sql-editors.js
     "sql-statements.js",  # ES-module, statisch geimporteerd door sql-editors.js (#34)
+    "sql-queries-file.js",  # ES-module, statisch geimporteerd door sql-editors.js (#30/#35)
     "sql-worker.js",   # workerscript, gestart via new Worker(...)
 }
 
