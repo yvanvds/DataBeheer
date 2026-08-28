@@ -1,4 +1,5 @@
-"""Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36).
+"""Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36),
+en de plaats van de DB Browser-installatie (issue #33).
 
 Draaien met de projectomgeving (PyYAML zit in de teachbooks-installatie):
 
@@ -63,6 +64,24 @@ ERD_FORWARD_REFERENCES = [
     r"\bstraks in\b",
 ]
 
+# Installatie (issue #33): het SQL-deel is volledig online. Deze formuleringen
+# horen bij een lokale DB Browser-werkwijze en mogen daar niet meer voorkomen.
+INSTALL_PHRASES = [
+    r"DB ?Browser",
+    r"sqlitebrowser",
+    r"\binstalleer\b",  # "Download en installeer …"
+    r"\binstallatie",
+    r"\bgeïnstalleerd",
+    r"Execute SQL",  # tabblad van DB Browser
+    r"Open Database",
+    r"\.sqlite\b",
+]
+
+# De enige downloadlink voor DB Browser for SQLite. Hij staat op de eerste
+# pagina van het ERD-deel en nergens eerder in leesvolgorde.
+DB_BROWSER_DOWNLOAD = r"https://sqlitebrowser\.org/dl/"
+DB_BROWSER_NAME = r"DB Browser for SQLite"
+
 
 class Skip(Exception):
     """Test overgeslagen (zonder pytest)."""
@@ -80,6 +99,42 @@ def load_toc() -> dict:
     import yaml
 
     return yaml.safe_load((BOOK / "_toc.yml").read_text(encoding="utf-8"))
+
+
+def toc_pages(part_index: int) -> list[str]:
+    """Alle pagina's van één deel uit _toc.yml, in leesvolgorde (paden relatief aan book/)."""
+    pages: list[str] = []
+
+    def walk(entries):
+        for entry in entries:
+            if "file" in entry:
+                pages.append(entry["file"])
+            walk(entry.get("sections", []))
+
+    walk(load_toc()["parts"][part_index]["chapters"])
+    assert pages, f"deel {part_index} in _toc.yml heeft geen pagina's"
+    return pages
+
+
+def pages_before(rel: str) -> list[str]:
+    """intro + alle pagina's die in leesvolgorde vóór `rel` komen."""
+    ordered = [page for i in range(len(load_toc()["parts"])) for page in toc_pages(i)]
+    assert rel in ordered, f"{rel} staat niet in _toc.yml"
+    return ["intro"] + ordered[: ordered.index(rel)]
+
+
+def source_of(rel: str) -> str:
+    """Markdown-brontekst van een pagina (notebook of .md), relatief aan book/."""
+    notebook = BOOK / f"{rel}.ipynb"
+    if notebook.is_file():
+        return markdown_of(notebook)
+    return (BOOK / f"{rel}.md").read_text(encoding="utf-8")
+
+
+def intro_part_items() -> list[str]:
+    """De genummerde deelbeschrijvingen in intro.md, elk als één regel."""
+    intro = (BOOK / "intro.md").read_text(encoding="utf-8")
+    return re.findall(r"^\d+\. \*\*.+$", intro, flags=re.MULTILINE)
 
 
 def markdown_of(notebook: Path) -> str:
@@ -186,7 +241,40 @@ def test_erd_does_not_point_to_a_later_part() -> None:
     assert_free_of(chapter_notebooks("ERD"), ERD_FORWARD_REFERENCES, markdown_of)
 
 
+def test_sql_part_needs_no_installation() -> None:
+    assert_free_of(chapter_notebooks("SQL"), INSTALL_PHRASES, markdown_of)
+
+
+def test_intro_promises_no_installation_for_sql_part() -> None:
+    items = intro_part_items()
+    assert len(items) == len(EXPECTED_PARTS), f"intro.md beschrijft {len(items)} delen"
+    hits = find_phrases(items[0], INSTALL_PHRASES)
+    assert not hits, "intro.md, deel 1: " + "\n".join(hits)
+
+
+def test_first_erd_page_installs_db_browser_with_motivation() -> None:
+    text = source_of(FIRST_ERD)
+    assert re.search(DB_BROWSER_DOWNLOAD, text), f"{FIRST_ERD}: geen downloadlink naar DB Browser"
+    assert re.search(DB_BROWSER_NAME, text), f"{FIRST_ERD}: DB Browser for SQLite wordt niet benoemd"
+    # De motivatie: hier wordt je databank een bestand dat je bewaart en indient.
+    assert re.search(r"\bbestand\b", text, flags=re.IGNORECASE), f"{FIRST_ERD}: geen motivatie (bestand)"
+
+
+def test_no_db_browser_before_first_erd_page() -> None:
+    problems = []
+    for rel in pages_before(FIRST_ERD):
+        text = source_of(rel)
+        if rel == "intro":
+            text = intro_part_items()[0]  # deel 3 mag DB Browser wel aankondigen
+        problems += [f"{rel}: {hit}" for hit in find_phrases(text, [DB_BROWSER_DOWNLOAD, r"DB ?Browser"])]
+    assert not problems, "\n".join(problems)
+
+
 # --- tests op de gebouwde site (wat de leerling ziet) ----------------------
+
+
+def visible_text(rel: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", page_html(rel)))
 
 
 def test_html_sidebar_lists_parts_in_order() -> None:
@@ -211,6 +299,28 @@ def test_html_has_no_stale_part_references() -> None:
     for rel in pages:
         text = re.sub(r"<[^>]+>", "", page_html(rel))  # tags weg, tekst blijft
         problems += [f"{rel}: {hit}" for hit in find_phrases(text, STALE_PHRASES)]
+    assert not problems, "\n".join(problems)
+
+
+def test_html_sql_part_needs_no_installation() -> None:
+    problems = []
+    for rel in toc_pages(0):
+        problems += [f"{rel}: {hit}" for hit in find_phrases(visible_text(rel), INSTALL_PHRASES)]
+    m = re.search(r'<ol class="arabic simple">\s*<li>(.*?)</li>', page_html("intro"), flags=re.DOTALL)
+    assert m, "intro.html: genummerde lijst met de delen niet gevonden"
+    first_item = html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))
+    problems += [f"intro (deel 1): {hit}" for hit in find_phrases(first_item, INSTALL_PHRASES)]
+    assert not problems, "\n".join(problems)
+
+
+def test_html_db_browser_download_first_appears_on_first_erd_page() -> None:
+    assert re.search(rf'href="{DB_BROWSER_DOWNLOAD}"', page_html(FIRST_ERD)), (
+        f"{FIRST_ERD}: geen downloadlink naar DB Browser in de gebouwde pagina"
+    )
+    problems = []
+    for rel in pages_before(FIRST_ERD):
+        if re.search(DB_BROWSER_DOWNLOAD, page_html(rel)):
+            problems.append(f"{rel}: bevat de downloadlink van DB Browser vóór het ERD-deel")
     assert not problems, "\n".join(problems)
 
 
