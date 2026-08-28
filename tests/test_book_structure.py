@@ -1,6 +1,7 @@
 """Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36),
 de plaats van de DB Browser-installatie (issue #33) en de verankering van de
-onderzoekscompetenties in het Big Data-deel (issue #37).
+onderzoekscompetenties in het Big Data-deel (issue #37) en de les kritisch werken
+met AI die daarnaast staat (issue #38).
 
 Draaien met de projectomgeving (PyYAML zit in de teachbooks-installatie):
 
@@ -120,6 +121,29 @@ LEERPLAN_QUOTES = [
     "De leerlingen maken op basis van een onderzoeksvraag visualisaties met een business intelligence tool.",
     "Je kan de leerlingen vragen om hun keuze van visualisatie te duiden.",
     "Verbanden zoeken tussen zelf verzamelde data en een (eigen) besluit trekken",
+]
+
+# Kritisch werken met AI (issue #38): een les als tweede sectie onder de Big
+# Data-inleiding, naast de competentiepagina. Ze is toolonafhankelijk (geen
+# chatbot bij naam), werkt zonder account (de te beoordelen gesprekken staan
+# uitgeschreven), draagt het competentiekader voor C1/C3/C6 en wordt gelinkt
+# vanaf elke plek waar AI-gebruik ter sprake komt.
+AI_PAGE = "chapters/BIG_DATA/01c_Kritisch_werken_met_AI"
+AI_TITLE = "Kritisch werken met AI: hulpmiddel, geen bron"
+AI_COMPETENCIES = {"C1": "deels zelfstandig", "C3": "deels zelfstandig", "C6": "deels zelfstandig"}
+# Pagina's die naar de les linken: de Big Data-inleiding, de competentiepagina
+# (C3: ook een AI-antwoord toets je aan de bron) en de twee opdrachten waarin AI mag.
+AI_LINKED_FROM = [FIRST_BIG_DATA, COMPETENCY_PAGE, FRAMED_CHAPTERS[7], FRAMED_CHAPTERS[8]]
+# Pagina's waarnaar de les zelf verwijst (opdrachten, checklist grafieken, competenties).
+AI_LINKS_TO = [COMPETENCY_PAGE, FRAMED_CHAPTERS[3], FRAMED_CHAPTERS[4], FRAMED_CHAPTERS[7], FRAMED_CHAPTERS[8]]
+CHATBOT_BRANDS = [r"ChatGPT", r"\bClaude\b", r"Copilot", r"\bGemini\b", r"Perplexity", r"OpenAI", r"Anthropic",
+                  r"\bGPT-?\d", r"Mistral", r"\bLlama\b"]
+# De echte bron van de controleoefening: het Eurostat-uittreksel op de pagina linkt naar deze tabel.
+AI_EUROSTAT_TABLE = "https://ec.europa.eu/eurostat/databrowser/view/lfsa_urgaed/default/table"
+AI_LEERPLAN_QUOTES = [
+    "Laat de leerlingen kritisch reflecteren over de betrouwbaarheid van de dataset door onder meer controle van de bron en waar mogelijk vergelijking met datasets van andere bronnen.",
+    "Toon hen dat met foute visualisaties verkeerde analyses worden gemaakt en dat dit soms bewust wordt gedaan voor desinformatie.",
+    "Kritisch nadenken over en argumenten afwegen zoals in een dialoog, een gedachtewisseling, een paper",
 ]
 
 
@@ -347,7 +371,7 @@ def test_no_db_browser_before_first_erd_page() -> None:
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
     chapters = load_toc()["parts"][EXPECTED_PARTS.index("Big Data")]["chapters"]
     intro = next(c for c in chapters if c["file"] == FIRST_BIG_DATA)
-    assert [s["file"] for s in intro.get("sections", [])] == [COMPETENCY_PAGE], intro
+    assert [s["file"] for s in intro.get("sections", [])] == [COMPETENCY_PAGE, AI_PAGE], intro
     assert (BOOK / f"{COMPETENCY_PAGE}.ipynb").is_file()
     assert source_of(COMPETENCY_PAGE).startswith(f"# {COMPETENCY_TITLE}\n")
 
@@ -411,6 +435,100 @@ def test_big_data_intro_and_book_intro_announce_the_competencies() -> None:
     assert "lessen economie" in text, f"{FIRST_BIG_DATA}: de afstemming met economie wordt niet benoemd"
     big_data_item = intro_part_items()[EXPECTED_PARTS.index("Big Data")]
     assert "onderzoekscompetenties" in big_data_item and "economie" in big_data_item, big_data_item
+
+
+def test_ai_page_is_the_section_next_to_the_competency_page() -> None:
+    # De toc-volgorde (competenties, dan AI) zit in test_competency_page_is_a_section_of_big_data_intro.
+    assert (BOOK / f"{AI_PAGE}.ipynb").is_file()
+    assert source_of(AI_PAGE).startswith(f"# {AI_TITLE}\n")
+
+
+def test_ai_page_frames_its_competencies() -> None:
+    assert competency_box(AI_PAGE) == AI_COMPETENCIES
+    # De les is geen genummerd hoofdstuk en staat dus niet in de opbouwtabel;
+    # de competentiepagina zegt zelf welke competenties ze oefent.
+    assert re.search(
+        rf"\[Kritisch werken met AI\]\({Path(AI_PAGE).name}\.ipynb\) draagt zo'n kader: ze oefent C1, C3 en C6",
+        source_of(COMPETENCY_PAGE),
+    ), "de competentiepagina legt niet uit dat de AI-les C1, C3 en C6 oefent"
+
+
+def test_ai_page_is_tool_agnostic_and_works_without_account() -> None:
+    text = source_of(AI_PAGE)
+    hits = find_phrases(text, CHATBOT_BRANDS)
+    assert not hits, "de AI-les noemt een chatbot bij naam:\n" + "\n".join(hits)
+    assert re.search(r"^:::\{admonition\} Welke AI-assistent\?$", text, flags=re.MULTILINE), "geen kader 'Welke AI-assistent?'"
+    assert "**zonder account**" in text, "de les zegt niet dat de oefeningen zonder account kunnen"
+    assert re.search(r"Heb je die niet, dan volstaan oefeningen 1 tot 3", text), "de oefening met eigen AI-toegang is niet optioneel"
+
+
+def test_ai_page_teaches_questions_verification_and_use_per_competency() -> None:
+    text = source_of(AI_PAGE)
+    problems = []
+    # Goede vragen stellen: context, doorvragen, itereren — en een oefening zonder AI.
+    for heading in ("### Geef context", "### Vraag door", "### Itereer",
+                    "### Oefening 1 — Verbeter de vraag", "### Oefening 2 — De controleoefening",
+                    "### Oefening 3 — Beoordeel de brainstorm", "### Oefening 4 — Met je eigen data"):
+        if not re.search(rf"^{re.escape(heading)}", text, flags=re.MULTILINE):
+            problems.append(f"geen kop '{heading}'")
+    # Controleoefening: een uitgeschreven AI-antwoord met genummerde beweringen,
+    # de echte bron met raadpleegdatum, en een oplossing die elke bewering beoordeelt.
+    claims = re.findall(r"^> \((\d)\) ", text, flags=re.MULTILINE)
+    if claims != [str(i) for i in range(1, 8)]:
+        problems.append(f"genummerde beweringen in het transcript: {claims}")
+    if AI_EUROSTAT_TABLE not in text or "geraadpleegd op" not in text:
+        problems.append("de echte bron (Eurostat-tabel met raadpleegdatum) ontbreekt")
+    for n in (1, 2, 3):
+        if not re.search(rf"^:::\{{admonition\}} Oplossing oefening {n}\n:class: dropdown$", text, flags=re.MULTILINE):
+            problems.append(f"geen dropdown 'Oplossing oefening {n}'")
+    verdicts = re.findall(r"^\| (?:\d|slot) \| \*\*([^*]+)\*\* \|", text, flags=re.MULTILINE)
+    kinds = {"Niet te controleren" if v.startswith("Niet te controleren") else v for v in verdicts}
+    if len(verdicts) != 8 or kinds != {"Klopt", "Klopt niet", "Niet te controleren"}:
+        problems.append(f"de oplossing beoordeelt niet elke bewering als klopt / klopt niet / niet te controleren: {verdicts}")
+    # Wél/niet: één rij per competentie, plus de twee vaste regels.
+    if "| Competentie | Wél | Niet |" not in text:
+        problems.append("geen tabel 'Competentie | Wél | Niet'")
+    for code, name in COMPETENCIES.items():
+        if not re.search(rf"^\| \*\*{code}\*\* {name} \| .+ \| .+ \|$", text, flags=re.MULTILINE):
+            problems.append(f"geen wél/niet-rij voor {code} {name}")
+    for pattern in (r"Een tweede AI is geen controle", r"\*\*Je vermeldt je AI-gebruik\.\*\*", r"verantwoordingstab",
+                    r"\*\*hallucineren\*\*", r"is \*\*geen bron\*\*"):
+        if not re.search(pattern, text):
+            problems.append(f"ontbreekt: /{pattern}/")
+    assert not problems, "\n".join(problems)
+
+
+def test_ai_page_quotes_resolve_in_leerplan() -> None:
+    page = source_of(AI_PAGE)
+    leerplan = re.sub(r"[*_]", "", LEERPLAN.read_text(encoding="utf-8"))  # **vet** weg
+    missing = [q for q in AI_LEERPLAN_QUOTES if q not in page]
+    assert not missing, "niet op de AI-les:\n" + "\n".join(missing)
+    unresolved = [q for q in AI_LEERPLAN_QUOTES if q not in leerplan]
+    assert not unresolved, "niet letterlijk in docs/leerplan.md:\n" + "\n".join(unresolved)
+    # Het leerplan noemt AI niet; de les zegt dat eerlijk in plaats van een doel te verzinnen.
+    assert "noemt AI-assistenten niet bij naam" in page
+    assert not re.search(r"\bAI\b|intelligentie|taalmodel", LEERPLAN.read_text(encoding="utf-8")), "leerplan noemt AI nu wél: pas de leraarsnoot aan"
+
+
+def test_ai_page_is_linked_wherever_ai_use_comes_up() -> None:
+    link = f"]({Path(AI_PAGE).name}.ipynb)"
+    problems = [f"{rel}: geen link naar de AI-les" for rel in AI_LINKED_FROM if link not in source_of(rel)]
+    if f"[{AI_TITLE}]({Path(AI_PAGE).name}.ipynb)" not in source_of(FIRST_BIG_DATA):
+        problems.append(f"{FIRST_BIG_DATA}: de link draagt niet de titel van de les")
+    for rel in (FRAMED_CHAPTERS[7], FRAMED_CHAPTERS[8]):
+        m = re.search(r"^## AI gebruiken\n(.*?)(?=^## )", source_of(rel), flags=re.MULTILINE | re.DOTALL)
+        if not m or link not in m.group(1):
+            problems.append(f"{rel}: de sectie 'AI gebruiken' linkt niet naar de AI-les")
+    if re.search(r"tweede AI\. Een AI halucineert", source_of(FRAMED_CHAPTERS[7])):
+        problems.append(f"{FRAMED_CHAPTERS[7]}: raadt nog een tweede AI aan als controle")
+    if "AI-assistent gebruikte" not in source_of(FRAMED_CHAPTERS[8]):
+        problems.append(f"{FRAMED_CHAPTERS[8]}: de verantwoordingstab vraagt niet naar het AI-gebruik")
+    ai = source_of(AI_PAGE)
+    problems += [f"{AI_PAGE}: geen link naar {rel}" for rel in AI_LINKS_TO if f"]({Path(rel).name}.ipynb)" not in ai]
+    big_data_item = intro_part_items()[EXPECTED_PARTS.index("Big Data")]
+    if "AI-assistent" not in big_data_item:
+        problems.append("intro.md: het Big Data-deel kondigt het kritisch werken met AI niet aan")
+    assert not problems, "\n".join(problems)
 
 
 # --- tests op de gebouwde site (wat de leerling ziet) ----------------------
@@ -489,7 +607,7 @@ def test_html_competency_page_renders_rubric_and_leerplan() -> None:
 def test_html_big_data_chapters_show_competency_box_with_link() -> None:
     target = f'<a class="reference internal" href="{Path(COMPETENCY_PAGE).name}.html">'
     problems = []
-    for rel in [FIRST_BIG_DATA, *FRAMED_CHAPTERS.values()]:
+    for rel in [FIRST_BIG_DATA, *FRAMED_CHAPTERS.values(), AI_PAGE]:
         article = article_html(rel)
         if target not in article:
             problems.append(f"{rel}: geen link naar de competentiepagina in de tekst")
@@ -498,12 +616,61 @@ def test_html_big_data_chapters_show_competency_box_with_link() -> None:
     assert not problems, "\n".join(problems)
 
 
-def test_html_competency_page_sits_between_big_data_intro_and_power_bi() -> None:
+def test_html_competency_page_follows_big_data_intro() -> None:
     assert prev_next(FIRST_BIG_DATA)[1] == COMPETENCY_PAGE, prev_next(FIRST_BIG_DATA)
-    assert prev_next(COMPETENCY_PAGE) == (FIRST_BIG_DATA, FRAMED_CHAPTERS[2]), prev_next(COMPETENCY_PAGE)
-    assert prev_next(FRAMED_CHAPTERS[2])[0] == COMPETENCY_PAGE, prev_next(FRAMED_CHAPTERS[2])
+    assert prev_next(COMPETENCY_PAGE) == (FIRST_BIG_DATA, AI_PAGE), prev_next(COMPETENCY_PAGE)
     sidebar = re.search(rf'href="{COMPETENCY_PAGE}\.html">([^<]*)<', page_html("intro"))
     assert sidebar and sidebar.group(1) == COMPETENCY_TITLE, "zijbalk toont de competentiepagina niet onder de Big Data-inleiding"
+
+
+def test_html_ai_page_sits_between_competency_page_and_power_bi() -> None:
+    assert prev_next(AI_PAGE) == (COMPETENCY_PAGE, FRAMED_CHAPTERS[2]), prev_next(AI_PAGE)
+    assert prev_next(FRAMED_CHAPTERS[2])[0] == AI_PAGE, prev_next(FRAMED_CHAPTERS[2])
+    sidebar = re.findall(r'href="chapters/BIG_DATA/([^"]+)\.html">([^<]*)<', page_html("intro"))
+    names = [name for name, _ in sidebar]
+    competencies, ai, power_bi = (Path(p).name for p in (COMPETENCY_PAGE, AI_PAGE, FRAMED_CHAPTERS[2]))
+    assert ai in names, "zijbalk toont de AI-les niet"
+    assert names.index(competencies) < names.index(ai) < names.index(power_bi), names
+    assert dict(sidebar)[ai] == AI_TITLE, "zijbalk toont de AI-les niet met haar titel"
+
+
+def test_html_ai_page_renders_lesson_and_links_resolve() -> None:
+    assert re.search(rf"<h1>{re.escape(AI_TITLE)}", page_html(AI_PAGE)), "titel van de AI-les ontbreekt"
+    article = article_html(AI_PAGE)
+    visible = html.unescape(re.sub(r"<[^>]+>", "", article))
+    problems = []
+    for title in ("Welke AI-assistent?", "Leerdoelen", COMPETENCY_BOX, "Een tweede AI is geen controle",
+                  "Oplossing oefening 1", "Oplossing oefening 2", "Oplossing oefening 3",
+                  "Voor de leraar: link met het leerplan"):
+        if f'<p class="admonition-title">{title}</p>' not in article:
+            problems.append(f"kader '{title}' niet gerenderd")
+    if len(re.findall(r'<div class="dropdown admonition">', article)) != 4:
+        problems.append("de drie oplossingen en de leraarsnoot renderen niet als vier dropdowns")
+    # Tabellen: soorten beweringen, het Eurostat-uittreksel, de oplossing van oefening 2 en wél/niet.
+    if len(re.findall(r'<table class="table">', article)) < 4:
+        problems.append("minder dan vier tabellen gerenderd")
+    for code, name in COMPETENCIES.items():
+        if not re.search(rf"<td[^>]*>(<p>)?<strong>{code}</strong> {name}", article):
+            problems.append(f"wél/niet-rij {code} niet gerenderd als tabelcel")
+    for phrase in ("(1) Hoe lager het opleidingsniveau", "geraadpleegd op", "zonder account", *AI_LEERPLAN_QUOTES):
+        if phrase not in visible:
+            problems.append(f"niet zichtbaar: {phrase[:60]!r}")
+    if f'<a class="reference external" href="{AI_EUROSTAT_TABLE}">' not in article:
+        problems.append("de link naar de Eurostat-tabel ontbreekt")
+    internal = re.findall(r'<a class="reference internal" href="([^"#]+)', article)
+    for href in internal:
+        if not (HTML / Path(AI_PAGE).parent / href).is_file():
+            problems.append(f"interne link naar onbestaande pagina: {href}")
+    for rel in AI_LINKS_TO:
+        if f"{Path(rel).name}.html" not in internal:
+            problems.append(f"geen link naar {rel} in de gebouwde pagina")
+    assert not problems, "\n".join(problems)
+
+
+def test_html_ai_page_is_linked_from_intro_competencies_and_assignments() -> None:
+    target = f'<a class="reference internal" href="{Path(AI_PAGE).name}.html">'
+    problems = [f"{rel}: geen link naar de AI-les in de tekst" for rel in AI_LINKED_FROM if target not in article_html(rel)]
+    assert not problems, "\n".join(problems)
 
 
 # --- runner zonder pytest --------------------------------------------------
