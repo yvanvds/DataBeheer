@@ -2,14 +2,14 @@
 
 1. Jupyter Book voegt elk ``*.js``-bestand onder ``_static`` toe aan
    ``html_js_files`` (``jupyter_book/config.py``, ``get_final_config``).
-   Daardoor kwamen de complete Monaco-boom (AMD-modules), ``sqljs/sql-wasm.js``
-   (UMD) en de ES-module-/workerbestanden van de SQL-editor als klassieke
-   ``<script>``-tags op elke pagina terecht. Dat gaf tientallen fouten in de
-   browserconsole (require.js "Mismatched anonymous define()", "Unexpected
-   token 'export'", "importScripts is not defined") en onnodig veel
-   scripttags per pagina. ``_prune_static_js`` houdt alleen de bestanden over
-   die echt als paginascript bedoeld zijn; de rest wordt on demand geladen
-   door de Monaco-loader, ``new Worker(...)`` of ``import()``.
+   Daardoor zouden de CodeMirror-bundel (ES-module), ``sqljs/sql-wasm.js``
+   (UMD, verwacht een worker-context) en de module-/workerbestanden van de
+   SQL-editor als klassieke ``<script>``-tags op elke pagina terechtkomen,
+   met consolefouten ("Unexpected token 'export'", "importScripts is not
+   defined") tot gevolg. ``_prune_static_js`` houdt alleen ``sql-editors.js``
+   over — als ES-module (``type="module"``), zodat het de CodeMirror-bundel
+   en het overlay via ``import`` kan laden; de rest wordt on demand geladen
+   via ``import()`` of ``new Worker(...)``.
 
 2. Sphinx (t/m 7.x) zet inline scripts (``add_js_file(None, body=...)``) van
    extensies dubbel op de pagina: ``StandaloneHTMLBuilder.prepare_writing``
@@ -37,18 +37,17 @@ from __future__ import annotations
 
 __version__ = "1.0.0"
 
-# Paginascripts uit book/_static die we bewust behouden.
-_KEEP_JS = {
-    "sql-editors.js",       # bootstrapt de SQL-editors; laadt de rest zelf
-    "monaco/vs/loader.js",  # AMD-loader waarmee sql-editors.js Monaco laadt
+# Paginascripts uit book/_static die we bewust behouden. sql-editors.js is
+# een ES-module (importeert de CodeMirror-bundel) en krijgt type="module".
+_KEEP_JS_MODULE = {
+    "sql-editors.js",  # bootstrapt de SQL-editors; laadt de rest zelf
 }
 
 # Relatieve paden die geen klassiek paginascript zijn.
-_DROP_PREFIXES = ("monaco/", "sqljs/")
+_DROP_PREFIXES = ("codemirror/", "sqljs/")
 _DROP_JS = {
-    "sql-completion.js",  # ES-module, dynamisch geimporteerd door sql-editors.js
-    "sql-overlay.js",     # ES-module, dynamisch geimporteerd door sql-editors.js
-    "sql-worker.js",      # workerscript, gestart via new Worker(...)
+    "sql-overlay.js",  # ES-module, dynamisch geimporteerd door sql-editors.js
+    "sql-worker.js",   # workerscript, gestart via new Worker(...)
 }
 
 # CSS-verwijzingen die naar niet-bestaande bestanden wijzen (zie punt 4).
@@ -61,9 +60,12 @@ def _prune_static_js(app, config):
     for entry in config.html_js_files:
         filename = entry[0] if isinstance(entry, (tuple, list)) else entry
         if isinstance(filename, str) and "://" not in filename:
-            if filename not in _KEEP_JS and (
-                filename in _DROP_JS or filename.startswith(_DROP_PREFIXES)
-            ):
+            if filename in _KEEP_JS_MODULE:
+                # Herregistreer als ES-module (Sphinx zet het type-attribuut
+                # op de <script>-tag; modules zijn impliciet deferred).
+                kept.append((filename, {"type": "module"}))
+                continue
+            if filename in _DROP_JS or filename.startswith(_DROP_PREFIXES):
                 continue
         kept.append(entry)
     config.html_js_files[:] = kept

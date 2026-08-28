@@ -14,11 +14,13 @@ execute:
 html:
   use_multitoc_numbering    : true                  # Default value (line can be removed), sets continuous numbering across parts/chapters, configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html). Same functionality per section can be defined with sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
 
-# De SQL-editors (Monaco + sql.js) worden geladen via de bestanden in _static:
-# Jupyter Book injecteert sql-editors.js en monaco/vs/loader.js (plus de CSS)
-# automatisch op elke pagina; sql-editors.js laadt Monaco, de worker en de
-# ES-modules daarna zelf. De lokale extensie _ext/sanitize_static_assets.py
-# houdt de overige _static-bestanden uit de paginascripts (issue #24).
+# De SQL-editors (CodeMirror 6 + sql.js, issue #17) worden geladen via de
+# bestanden in _static: Jupyter Book injecteert sql-editors.js (plus de CSS)
+# automatisch op elke pagina; sql-editors.js importeert de gevendorde
+# CodeMirror-bundel (_static/codemirror/, bouwen met `npm run build:editor`)
+# en laadt de worker en het schema-overlay zelf. De lokale extensie
+# _ext/sanitize_static_assets.py houdt de overige _static-bestanden uit de
+# paginascripts en zet type="module" op sql-editors.js (issue #24).
 sphinx:                                              # Options passed on to the underlying sphinx-parser
   extra_extensions:                                  # Sets a list of extensions to load by sphinx, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     - teachbooks_favourites                          # Gives you a starter package of extensions to use in your book, replace with individual extensions if you prefer some extensions not to be included (https://github.com/TeachBooks/TeachBooks-Favourites)

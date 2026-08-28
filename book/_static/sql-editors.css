@@ -5,8 +5,9 @@
    dark-mode-blokken meer nodig. Elke var() heeft een statische fallback
    (de light-waarden) zodat dit bestand ook zonder thema bruikbaar blijft.
 
-   Let op voor issue #17 (herbouw op CodeMirror 6): dit bestand is de ene
-   plek voor editor-styling — hergebruik de `--sql-*`-tokens hieronder. */
+   Dit bestand is de ene plek voor editor-styling — de CodeMirror-editor
+   (issue #17) haalt zijn kleuren uit de `--sql-*`-tokens hieronder, via het
+   EditorView-thema in sql-editors.js en de `.sql-tok-*`-klassen hier. */
 
 /* ── editor-tokens, afgeleid van de Plink-tokens ───────── */
 :root {
@@ -15,6 +16,7 @@
   --sql-surface-inset: var(--plink-surface-inset, #ECE7DC);   /* accordion-body */
   --sql-text: var(--plink-text, #1B1B23);
   --sql-text-muted: var(--plink-text-muted, #6E6A62);
+  --sql-text-caption: var(--plink-text-caption, #9A958B);  /* regelnummers, NULL */
   --sql-border: var(--plink-border, rgba(27, 27, 35, 0.14));
   --sql-border-strong: var(--plink-border-strong, rgba(27, 27, 35, 0.26));
   --sql-accent: var(--plink-accent, #DB2777);
@@ -27,6 +29,22 @@
   --sql-radius-sm: var(--plink-radius-sm, 4px);
   --sql-radius: var(--plink-radius, 6px);
   --sql-radius-lg: var(--plink-radius-lg, 8px);
+
+  /* editor-eigen kleuren zonder direct plink-token; light hier,
+     dark in het html[data-theme="dark"]-blok hieronder */
+  --sql-selection: var(--plink-paper-3, #ECE7DC);          /* tekstselectie */
+  --sql-active-line: rgba(27, 27, 35, 0.05);               /* actieve regel (transparant, zodat selectie zichtbaar blijft) */
+  --sql-tok-keyword: var(--plink-magenta-press, #C01F68);  /* SELECT, FROM, … — de vonk */
+  --sql-tok-plain: var(--plink-ink-80, #3A3A42);           /* operatoren, getallen, types */
+  --sql-error: #B42318;                                    /* foutmeldingen */
+}
+
+html[data-theme="dark"] {
+  --sql-selection: #3B1A2B;                                /* ink met magenta-zweem */
+  --sql-active-line: rgba(250, 247, 242, 0.06);
+  --sql-tok-keyword: var(--plink-magenta-on-dark, #EC4899);
+  --sql-tok-plain: #D8D3CA;
+  --sql-error: #F97066;
 }
 
 /* ── de editorcel: vlak paneel met hairline, geen schaduw ── */
@@ -66,6 +84,25 @@
   font-family: var(--sql-font-mono);
   font-size: var(--sql-label-size);
   color: var(--sql-text-muted);
+}
+.sql-live-error {
+  font-family: var(--sql-font-mono);
+  font-size: .875rem;
+  color: var(--sql-error);
+}
+
+/* ── CodeMirror: syntaxkleuren (klassen uit sql-editors.js) ──
+   Chrome-styling (achtergrond, gutter, selectie, tooltip) zit in het
+   EditorView-thema in sql-editors.js, met dezelfde --sql-*-tokens. */
+.sql-live-editor .sql-tok-keyword { color: var(--sql-tok-keyword); }
+.sql-live-editor .sql-tok-plain   { color: var(--sql-tok-plain); }
+.sql-live-editor .sql-tok-string  { color: var(--sql-text-muted); }
+.sql-live-editor .sql-tok-comment { color: var(--sql-text-caption); font-style: italic; }
+
+/* NULL gestileerd (cursief, gedimd) — niet te verwarren met de tekst 'null' */
+.sql-null {
+  font-style: italic;
+  color: var(--sql-text-caption);
 }
 
 /* ── knoppen: één primaire (Run) met de vonk, de rest hairline ── */
@@ -276,3 +313,6 @@
   vertical-align: top;
   word-break: break-word;
 }
+
+/* Meerdere statements in één Run → meerdere tabellen onder elkaar */
+.sqljs-table + .sqljs-table { margin-top: .75rem; }

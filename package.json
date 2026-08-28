@@ -4,6 +4,7 @@
   "description": "The template allows you to start your own TeachBook and hosting that TeachBook online without knowledge on Git, the Jupyter book package, python or anaconda. It doesn't elaborate on the collaborative functionalities of Git or how to edit the book. Please look at our manual (https://teachbooks.io/manual) to find more about that!",
   "main": "index.js",
   "scripts": {
+    "build:editor": "esbuild scripts/codemirror-entry.mjs --bundle --format=esm --minify --outfile=book/_static/codemirror/codemirror.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -18,7 +19,14 @@
   },
   "homepage": "https://github.com/yvanvds/DataBeheer#readme",
   "devDependencies": {
-    "monaco-editor": "^0.54.0"
+    "@codemirror/autocomplete": "^6.18.6",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-sql": "^6.8.0",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.8",
+    "@lezer/highlight": "^1.2.1",
+    "esbuild": "^0.25.5"
   },
   "dependencies": {
     "sql.js": "^1.13.0"

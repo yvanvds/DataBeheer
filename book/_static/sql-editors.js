@@ -1,13 +1,47 @@
 // _static/sql-editors.js
+// Interactieve SQL-cellen op CodeMirror 6 + sql.js (issue #17).
+//
+// Dit bestand is een ES-module: _ext/sanitize_static_assets.py zorgt dat het
+// met type="module" op elke pagina staat. Het importeert de gevendorde
+// CodeMirror-bundel (_static/codemirror/codemirror.js — bron:
+// scripts/codemirror-entry.mjs, bouwen met `npm run build:editor`).
+//
+// Werking per pagina:
+//   - een cel met tag `sql-db` bevat het pad naar de seed-database;
+//   - elke cel met tag `sql-live` wordt een editor (expliciete tag — er is
+//     bewust géén fallback meer die alle ```sql-blokken omzet);
+//   - alle editors delen één sql.js-database in een worker, met een watchdog
+//     die runaway queries stopt en de database opnieuw seedt;
+//   - schema-aware autocomplete via @codemirror/lang-sql, na elke geslaagde
+//     Run ververst (CREATE TABLE-lessen);
+//   - haakje voor opslag van leerlingqueries (#14): window.sqlLive.editors.
+
+import {
+  EditorState, Compartment,
+  EditorView, keymap, lineNumbers, drawSelection,
+  highlightActiveLine, highlightActiveLineGutter,
+  defaultKeymap, history, historyKeymap, indentWithTab,
+  indentOnInput, bracketMatching, syntaxHighlighting, HighlightStyle,
+  autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
+  sql, SQLite, tags,
+} from './codemirror/codemirror.js';
+
 // --- Config ---
-const _script = document.currentScript || document.querySelector('script[src*="sql-editors.js"]');
-const STATIC_BASE = _script
-  ? _script.src.replace(/\/sql-editors\.js(?:\?.*)?$/, '')   // e.g. https://.../DataBeheer/main/_static
-  : (window.__STATIC_BASE__ || '/_static');
-const MONACO_BASE = `${STATIC_BASE}/monaco`;
-const SHARED_ID   = 'db:' + location.pathname; // one in-memory DB per page
-const clients     = new Map();                  // clientId -> output <div>
+const STATIC_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
+const SHARED_ID = 'db:' + location.pathname; // één in-memory database per pagina
+const RUN_LIMIT = 500;                       // max. rijen per resultaat
+const RUN_TIMEOUT_MS = 10000;                // watchdog voor runaway queries
+
+const OUTPUT_PLACEHOLDER = 'De resultaten verschijnen hier.';
+
+const clients = new Map();    // clientId -> output-<div>
+const cells = [];             // interne administratie per editorcel
+const editorsApi = [];        // publieke API per cel (window.sqlLive.editors)
+const watchdogs = new Map();  // clientId -> { timer, outputEl }
 let worker = null;
+let seedBuf = null;           // ArrayBuffer van de seed-database (voor reset/reseed)
+let dbReady = false;
+let signalReady = null;
 
 // --- Utils ---
 function resolveStatic(url) {
@@ -16,24 +50,43 @@ function resolveStatic(url) {
     : url;
 }
 
-function escapeHtml(s) {
-  return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-}
-function renderTable(columns, rows, truncated) {
-  const thead = `<thead><tr>${columns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>`;
-  const tbody = rows.map(r => `<tr>${r.map(v => `<td>${escapeHtml(v)}</td>`).join('')}</tr>`).join('');
-  const note  = truncated ? `<div class="sql-live-note">Results truncated…</div>` : '';
-  return `<table class="sqljs-table">${thead}<tbody>${tbody}</tbody></table>${note}`;
-}
-function onReady(cb){ 
-  if(/complete|interactive/.test(document.readyState)) cb(); 
-  else document.addEventListener('DOMContentLoaded', cb, {once:true}); 
+function onReady(cb) {
+  if (/complete|interactive/.test(document.readyState)) cb();
+  else document.addEventListener('DOMContentLoaded', cb, { once: true });
 }
 
-// --- Page-level seed selector (cell tagged `sql-db`) ---
+// --- Render-helpers (ook gebruikt door sql-overlay.js) ---
+export function escapeHtml(s) {
+  return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function renderValue(v) {
+  // NULL gestileerd tonen — niet als de tekst "null" (verwarrend in de les
+  // over NULL versus de tekstwaarde 'null').
+  if (v === null || v === undefined) return '<td><span class="sql-null">NULL</span></td>';
+  return `<td>${escapeHtml(v)}</td>`;
+}
+
+export function renderTable({ columns, rows, truncated }) {
+  const thead = `<thead><tr>${columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>`;
+  const tbody = rows.map(r => `<tr>${r.map(renderValue).join('')}</tr>`).join('');
+  const note = truncated
+    ? `<div class="sql-live-note">Afgekapt: alleen de eerste ${rows.length} rijen worden getoond.</div>`
+    : '';
+  return `<table class="sqljs-table">${thead}<tbody>${tbody}</tbody></table>${note}`;
+}
+
+export function renderResults(results) {
+  // Elk statement met resultaatrijen krijgt zijn eigen tabel (niet enkel het eerste).
+  if (!results || !results.length) {
+    return '<div class="sql-live-note">OK — uitgevoerd, geen resultaatrijen.</div>';
+  }
+  return results.map(renderTable).join('');
+}
+
+// --- Seed-cel (cel met tag `sql-db`) ---
 function pickPageSeedUrl() {
   const sel = document.querySelector('.cell.tag_sql-db, .cell.tag-sql-db');
-  console.log('pickPageSeedUrl: found selector cell:', sel);
   if (!sel) return null;
 
   const pre = sel.querySelector('pre');
@@ -43,262 +96,333 @@ function pickPageSeedUrl() {
   return url;
 }
 
-// --- Monaco loader ---
-function loadMonaco() {
-  console.log('Loading monaco from', MONACO_BASE);
-
-  return new Promise((resolve) => {
-    window.require.config({ baseUrl: MONACO_BASE, paths: { 'vs': `${MONACO_BASE}/vs` } });
-    window.require(['vs/editor/editor.main'], () => resolve(window.monaco));
-  });
-}
-
-// --- Monaco-thema's in de Plink-huisstijl (zie _static/plink/tokens.css) ---
-// Ink + paper dragen het beeld; magenta markeert alleen de keywords.
-function definePlinkThemes(monaco) {
-  monaco.editor.defineTheme('plink-light', {
-    base: 'vs', inherit: true,
-    rules: [
-      { token: '', foreground: '1B1B23' },
-      { token: 'keyword', foreground: 'C01F68' },
-      { token: 'operator.sql', foreground: '3A3A42' },
-      { token: 'predefined.sql', foreground: '3A3A42' },
-      { token: 'string', foreground: '6E6A62' },
-      { token: 'string.sql', foreground: '6E6A62' },
-      { token: 'number', foreground: '3A3A42' },
-      { token: 'comment', foreground: '9A958B', fontStyle: 'italic' },
-      { token: 'identifier', foreground: '1B1B23' },
-    ],
-    colors: {
-      'editor.background': '#FAF7F2',
-      'editor.foreground': '#1B1B23',
-      'editorLineNumber.foreground': '#9A958B',
-      'editorLineNumber.activeForeground': '#1B1B23',
-      'editorCursor.foreground': '#DB2777',
-      'editor.lineHighlightBackground': '#F3EFE7',
-      'editor.selectionBackground': '#ECE7DC',
-      'editorIndentGuide.background': '#ECE7DC',
-    },
-  });
-  monaco.editor.defineTheme('plink-dark', {
-    base: 'vs-dark', inherit: true,
-    rules: [
-      { token: '', foreground: 'FAF7F2' },
-      { token: 'keyword', foreground: 'EC4899' },
-      { token: 'operator.sql', foreground: 'D8D3CA' },
-      { token: 'predefined.sql', foreground: 'D8D3CA' },
-      { token: 'string', foreground: 'A5A099' },
-      { token: 'string.sql', foreground: 'A5A099' },
-      { token: 'number', foreground: 'D8D3CA' },
-      { token: 'comment', foreground: '8E8A82', fontStyle: 'italic' },
-      { token: 'identifier', foreground: 'FAF7F2' },
-    ],
-    colors: {
-      'editor.background': '#15151B',
-      'editor.foreground': '#FAF7F2',
-      'editorLineNumber.foreground': '#8E8A82',
-      'editorLineNumber.activeForeground': '#FAF7F2',
-      'editorCursor.foreground': '#EC4899',
-      'editor.lineHighlightBackground': '#23232C',
-      'editor.selectionBackground': '#3B1A2B',
-      'editorIndentGuide.background': '#23232C',
-    },
-  });
-}
-
-function currentPlinkTheme() {
-  return document.documentElement.dataset.theme === 'dark' ? 'plink-dark' : 'plink-light';
-}
-
-// Schakel mee met de themaknop van het boek (data-theme op <html>)
-function watchThemeSwitch(monaco) {
-  monaco.editor.setTheme(currentPlinkTheme());
-  new MutationObserver(() => monaco.editor.setTheme(currentPlinkTheme()))
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-}
-
-// --- Find + wrap SQL cells ---
+// --- Interactieve cellen: alleen expliciet getagd met `sql-live` ---
 function findSqlBlocks() {
   const blocks = [];
   document.querySelectorAll('.cell.tag_sql-live, .cell.tag-sql-live').forEach(cell => {
-    const pre = cell.querySelector('.cell_input pre, pre'); if (!pre) return;
-    blocks.push({ cell, pre, initialSql: pre.textContent || '' });
+    const pre = cell.querySelector('.cell_input pre, pre');
+    if (!pre) return;
+    blocks.push({ cell, initialSql: (pre.textContent || '').trim() });
   });
-  console.log('findSqlBlocks: found tagged sql-live cells:', blocks.length);
-  
-  // Fallback (optional) by language class
-  if (blocks.length === 0) {
-    document.querySelectorAll('pre > code.language-sql, pre > code.language-mssql, div.highlight-sql pre, div.highlight-mssql pre')
-      .forEach(el => {
-        const cell = el.closest('.cell') || el.closest('div.highlight') || el.closest('pre');
-        const pre  = cell?.querySelector('pre') || el.closest('pre') || el;
-        const sql  = (el.textContent || pre?.textContent || '').trim();
-        if (cell && sql) blocks.push({ cell, pre, initialSql: sql });
-      });
-  }
-
-  const seen = new Set();
-  return blocks.filter(({cell}) => (seen.has(cell) ? false : (seen.add(cell), true)));
+  return blocks;
 }
 
-function wrapCell(cell, initialSql, preToHide) {
-  if (preToHide) preToHide.style.display = 'none';
-  const cellInput = cell.querySelector('.cell_input'); if (cellInput) cellInput.remove();
+function wrapCell(cell) {
+  const cellInput = cell.querySelector('.cell_input');
+  if (cellInput) cellInput.remove();
 
   const wrap = document.createElement('div');
   wrap.className = 'sql-live-wrap';
   wrap.innerHTML = `
     <div class="sql-live-toolbar">
-      <span class="title">Interactive SQL</span>
+      <span class="title">Interactieve SQL</span>
       <button class="sql-live-btn run">Run</button>
       <button class="sql-live-btn reset">Reset</button>
       <button class="sql-live-btn schema">Schema</button>
-      <span class="sql-live-note">Ctrl/Cmd+Enter to run</span>
+      <span class="sql-live-note">Ctrl/Cmd+Enter om uit te voeren</span>
     </div>
     <div class="sql-live-editor"></div>
-    <div class="sql-live-output">Output will appear here.</div>
+    <div class="sql-live-output">${OUTPUT_PLACEHOLDER}</div>
   `;
   cell.appendChild(wrap);
   return {
     editorEl: wrap.querySelector('.sql-live-editor'),
     outputEl: wrap.querySelector('.sql-live-output'),
-    runBtn  : wrap.querySelector('.run'),
+    runBtn: wrap.querySelector('.run'),
     resetBtn: wrap.querySelector('.reset'),
     schemaBtn: wrap.querySelector('.schema'),
   };
 }
 
-// --- Wire editors to the SINGLE shared DB session ---
-function initEditors(monaco, seedBuf) {
-  console.log('initEditors: setting up SQL editors');
-  const blocks = findSqlBlocks();
-  blocks.forEach(({ cell, pre, initialSql }) => {
-    const ui = wrapCell(cell, initialSql, pre);
+// --- CodeMirror in de Plink-huisstijl ---
+// De kleuren komen uit de `--sql-*`-tokens in sql-editors.css; die schakelen
+// zelf mee met de themaknop van het boek (html[data-theme]), dus één thema
+// volstaat voor light én dark.
+const plinkTheme = EditorView.theme({
+  '&': {
+    height: '100%',
+    backgroundColor: 'var(--sql-surface)',
+    color: 'var(--sql-text)',
+    fontSize: '0.875rem',
+  },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': { fontFamily: 'var(--sql-font-mono)', lineHeight: '1.55' },
+  '.cm-content': { caretColor: 'var(--sql-accent)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--sql-accent)' },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, .cm-content ::selection': {
+    backgroundColor: 'var(--sql-selection)',
+  },
+  '.cm-activeLine': { backgroundColor: 'var(--sql-active-line)' },
+  '.cm-gutters': {
+    backgroundColor: 'var(--sql-surface)',
+    color: 'var(--sql-text-caption)',
+    borderRight: '1px solid var(--sql-border)',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'var(--sql-active-line)',
+    color: 'var(--sql-text)',
+  },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--sql-surface-raised)',
+    color: 'var(--sql-text)',
+    border: '1px solid var(--sql-border-strong)',
+    borderRadius: 'var(--sql-radius)',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': {
+    fontFamily: 'var(--sql-font-mono)',
+    fontSize: '0.8125rem',
+  },
+  '.cm-tooltip-autocomplete ul li[aria-selected]': {
+    backgroundColor: 'var(--sql-accent)',
+    color: 'var(--sql-on-accent)',
+  },
+  '.cm-completionMatchedText': { textDecoration: 'none', fontWeight: '700' },
+});
 
-    const editor = monaco.editor.create(ui.editorEl, {
-      value: initialSql || 'SELECT 1;',
-      language: 'sql',
-      automaticLayout: true,
-      fontSize: 14,
-      minimap: { enabled: false }
+// Syntaxkleuren via CSS-klassen (gestyled in sql-editors.css met Plink-tokens).
+const plinkHighlight = HighlightStyle.define([
+  { tag: tags.keyword, class: 'sql-tok-keyword' },
+  { tag: [tags.bool, tags.null], class: 'sql-tok-keyword' },
+  { tag: [tags.operator, tags.number, tags.typeName], class: 'sql-tok-plain' },
+  { tag: [tags.string, tags.special(tags.string)], class: 'sql-tok-string' },
+  { tag: tags.comment, class: 'sql-tok-comment' },
+]);
+
+// --- Schema-aware autocomplete ---
+let currentSchema = {};
+
+function makeSqlLang(schema) {
+  return sql({ dialect: SQLite, schema, upperCaseKeywords: true });
+}
+
+function applySchema(schema) {
+  currentSchema = schema || {};
+  cells.forEach(({ view, langCompartment }) => {
+    view.dispatch({ effects: langCompartment.reconfigure(makeSqlLang(currentSchema)) });
+  });
+}
+
+function refreshCatalog() {
+  if (!worker) return;
+  worker.postMessage({ id: SHARED_ID, type: 'catalog' });
+}
+
+// --- Worker + watchdog ---
+function startWorker() {
+  worker = new Worker(`${STATIC_BASE}/sql-worker.js`);
+  worker.onmessage = onWorkerMessage;
+  const ready = new Promise(resolve => { signalReady = resolve; });
+  worker.postMessage({
+    id: SHARED_ID,
+    type: 'init',
+    payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {},
+  });
+  return ready;
+}
+
+function armWatchdog(client, outputEl) {
+  clearWatchdog(client);
+  watchdogs.set(client, {
+    timer: setTimeout(onRunTimeout, RUN_TIMEOUT_MS),
+    outputEl,
+  });
+}
+
+function clearWatchdog(client) {
+  const w = watchdogs.get(client);
+  if (w) {
+    clearTimeout(w.timer);
+    watchdogs.delete(client);
+  }
+}
+
+async function onRunTimeout() {
+  // Runaway query (bv. een cartesisch product): de worker zit vast in exec.
+  // Termineer hem en seed de database opnieuw, met een duidelijke melding in
+  // elke cel die nog op een resultaat wachtte.
+  const waiting = [...watchdogs.values()].map(w => w.outputEl);
+  watchdogs.forEach(w => clearTimeout(w.timer));
+  watchdogs.clear();
+  try { worker?.terminate(); } catch { /* al gestopt */ }
+  worker = null;
+  dbReady = false;
+  waiting.forEach(el => {
+    el.innerHTML =
+      '<div class="sql-live-error">De query duurde te lang en werd gestopt. De database wordt opnieuw geladen…</div>';
+  });
+  try {
+    await startWorker();
+    waiting.forEach(el => {
+      el.innerHTML =
+        '<div class="sql-live-error">De query duurde te lang en werd gestopt. ' +
+        'De database is opnieuw geladen met de startgegevens — controleer je query ' +
+        '(bv. de JOIN-voorwaarden) en probeer opnieuw.</div>';
     });
+  } catch (e) {
+    console.error('SQL-editor: database opnieuw laden mislukt:', e);
+  }
+}
 
-    const client = Math.random().toString(36).slice(2);
+function onWorkerMessage(ev) {
+  const { id, type, payload } = ev.data || {};
+  if (id !== SHARED_ID) return;
+
+  if (type === 'ready') {
+    dbReady = true;
+    if (signalReady) { signalReady(); signalReady = null; }
+    refreshCatalog();
+    return;
+  }
+
+  if (type === 'catalog') {
+    applySchema(payload?.schema);
+    return;
+  }
+
+  if (type === 'error') {
+    const { client, message } = payload || {};
+    const out = clients.get(client);
+    if (!out) return; // bv. berichten van het schema-overlay
+    clearWatchdog(client);
+    out.innerHTML = `<div class="sql-live-error">Fout: ${escapeHtml(message || 'onbekende fout')}</div>`;
+    return;
+  }
+
+  if (type === 'result') {
+    const { client, results } = payload || {};
+    const out = clients.get(client);
+    if (!out) return; // bv. previews van het schema-overlay
+    clearWatchdog(client);
+    out.innerHTML = renderResults(results);
+    refreshCatalog(); // nieuwe tabellen (CREATE TABLE) meteen in de autocomplete
+  }
+}
+
+// --- Acties per cel ---
+function runQuery(rec) {
+  if (!worker || !dbReady) {
+    rec.outputEl.innerHTML =
+      '<div class="sql-live-note">De database wordt nog geladen — probeer zo meteen opnieuw.</div>';
+    return;
+  }
+  rec.outputEl.innerHTML = '<div class="sql-live-note">Bezig…</div>';
+  armWatchdog(rec.client, rec.outputEl);
+  worker.postMessage({
+    id: SHARED_ID,
+    type: 'exec',
+    payload: { sql: rec.view.state.doc.toString(), limit: RUN_LIMIT, client: rec.client },
+  });
+}
+
+function resetDatabase() {
+  if (!worker) return;
+  dbReady = false;
+  clients.forEach(el => { el.textContent = OUTPUT_PLACEHOLDER; });
+  worker.postMessage({
+    id: SHARED_ID,
+    type: 'reset',
+    payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {},
+  });
+}
+
+async function openSchema() {
+  const mod = await import(`${STATIC_BASE}/sql-overlay.js`);
+  mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
+}
+
+// --- Editors opzetten ---
+function editorExtensions(langCompartment, run, onDocChange) {
+  return [
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    history(),
+    drawSelection(),
+    indentOnInput(),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion(),
+    highlightActiveLine(),
+    plinkTheme,
+    syntaxHighlighting(plinkHighlight),
+    keymap.of([
+      { key: 'Mod-Enter', run: () => { run(); return true; } },
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      ...completionKeymap,
+      indentWithTab,
+    ]),
+    langCompartment.of(makeSqlLang(currentSchema)),
+    EditorView.updateListener.of(u => { if (u.docChanged) onDocChange(); }),
+  ];
+}
+
+function initEditors(blocks) {
+  blocks.forEach(({ cell, initialSql }, index) => {
+    const ui = wrapCell(cell);
+    const doc = initialSql || 'SELECT 1;';
+    const client = 'cell-' + index;
     clients.set(client, ui.outputEl);
 
-    const run = () => worker.postMessage({
-      id: SHARED_ID,
-      type: 'exec',
-      payload: { sql: editor.getValue(), limit: 500, client }
+    const langCompartment = new Compartment();
+    const changeListeners = [];
+    const rec = { client, outputEl: ui.outputEl, langCompartment, view: null };
+
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: editorExtensions(
+          langCompartment,
+          () => runQuery(rec),
+          () => {
+            const value = view.state.doc.toString();
+            changeListeners.forEach(cb => { try { cb(value); } catch { /* listener-fout negeren */ } });
+          },
+        ),
+      }),
+      parent: ui.editorEl,
     });
-    ui.runBtn.addEventListener('click', run);
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
+    rec.view = view;
+    cells.push(rec);
 
-    ui.resetBtn.addEventListener('click', () => {
-      worker.postMessage({
-        id: SHARED_ID,
-        type: 'reset',
-        payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {}
-      });
-      clients.forEach(el => el.textContent = 'Output will appear here.');
+    ui.runBtn.addEventListener('click', () => runQuery(rec));
+    ui.resetBtn.addEventListener('click', resetDatabase);
+    ui.schemaBtn.addEventListener('click', openSchema);
+
+    // Publieke API per cel — haakje voor opslag van leerlingqueries (#14).
+    editorsApi.push({
+      key: `${location.pathname}#sql-live-${index}`,
+      index,
+      initialValue: doc,
+      getValue: () => view.state.doc.toString(),
+      setValue: (text) => view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: String(text) },
+      }),
+      onChange: (cb) => { changeListeners.push(cb); },
     });
-
-    ui.schemaBtn.addEventListener('click', async () => {
-      const mod = await import(`${STATIC_BASE}/sql-overlay.js`);
-      mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
-    });
-
-
   });
 }
 
 // --- Boot ---
 onReady(async () => {
+  const seedUrlRaw = pickPageSeedUrl(); // verwijdert de sql-db-cel van de pagina
+  const blocks = findSqlBlocks();
+  if (!blocks.length) return; // geen interactieve cellen op deze pagina
+
   try {
-    const monaco = await loadMonaco();
-    definePlinkThemes(monaco);
-    watchThemeSwitch(monaco);
-
-    const seedUrlRaw = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
-    const seedUrl = seedUrlRaw?.startsWith('/_static/')
-      ? STATIC_BASE + seedUrlRaw.slice('/_static'.length)
-      : seedUrlRaw;
-    console.log('SQL editor seed DB URL:', seedUrl);
-
-    let seedBuf = null;
+    const seedUrl = resolveStatic(seedUrlRaw); // bv. "/_static/db/webshop.db"
     if (seedUrl) {
       const res = await fetch(seedUrl);
-      console.log('[seed] fetch', seedUrl, res.status, res.statusText);
-      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      if (!res.ok) throw new Error(`database laden mislukt: ${res.status} (${seedUrl})`);
       seedBuf = await res.arrayBuffer();
     }
 
-    // single worker for the page
-    worker = new Worker(`${STATIC_BASE}/sql-worker.js`);
+    initEditors(blocks);
+    window.sqlLive = { editors: editorsApi, staticBase: STATIC_BASE };
+    document.dispatchEvent(new CustomEvent('sql-live:ready', { detail: window.sqlLive }));
 
-    // route results by `client`
-    worker.onmessage = (ev) => {
-      const { type, payload } = ev.data || {};
-      if (type === 'error') {
-        const { client, message } = payload || {};
-        const out = clients.get(client);
-        if (out) out.textContent = 'Error: ' + (message || 'Unknown error');
-        return;
-      }
-
-      if (type !== 'result') return; // keep it simple; errors still show via console if thrown
-      const { client, columns, rows, truncated } = payload || {};
-      const out = clients.get(client);
-      if (!out) return;
-      out.innerHTML = columns ? renderTable(columns, rows, truncated) : 'OK';
-    };
-
-    // init the shared DB once
-    worker.postMessage({
-      id: SHARED_ID,
-      type: 'init',
-      payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {}
-    });
-
-    await waitForWorkerReady(worker, SHARED_ID);   // ← ensure session exists
-
-    // create editors
-    initEditors(monaco, seedBuf);
-
-    // … add completion support
-    const { initSqlCompletion } = await import(`${STATIC_BASE}/sql-completion.js`);
-
-    await initSqlCompletion({
-      monaco,
-      worker,
-      sharedId: SHARED_ID,
-      getEditors: () => [editor],  // keep for future use; harmless today
-    });
+    await startWorker();
   } catch (e) {
-    console.error('Monaco/SQL init failed:', e);
+    console.error('SQL-editor init mislukt:', e);
   }
 });
-
-
-function waitForWorkerReady(worker, id) {
-  return new Promise((resolve, reject) => {
-    const onMsg = (ev) => {
-      const { id: mid, type, payload } = ev.data || {};
-      if (mid !== id) return;
-
-      if (type === 'result' &&
-          Array.isArray(payload?.columns) &&
-          payload.columns[0] === 'status' &&
-          Array.isArray(payload?.rows) &&
-          payload.rows[0]?.[0] === 'ready') {
-        worker.removeEventListener('message', onMsg);
-        resolve();
-      }
-      if (type === 'error') {
-        worker.removeEventListener('message', onMsg);
-        reject(new Error(payload?.message || 'Worker error'));
-      }
-    };
-    worker.addEventListener('message', onMsg);
-  });
-}

@@ -1,5 +1,14 @@
 // _static/sql-overlay.js
+// Render-helpers gedeeld met de editorlaag (zelfde module-instantie,
+// dus geen dubbele escapeHtml/renderTable meer).
+import { escapeHtml, renderResults } from './sql-editors.js';
+
 let schemaOverlayEl = null;
+
+// Identifiers altijd quoten in gegenereerde SQL (tabelnamen met spaties e.d.).
+function quoteIdent(name) {
+    return '"' + String(name).replaceAll('"', '""') + '"';
+}
 
 // ---------- Overlay structure ----------
 function ensureSchemaOverlay() {
@@ -248,20 +257,6 @@ function renderColumnsTable(columns) {
 }
 
 
-// ---------- Basic table renderer (copied from sql-editors.js) ----------
-function escapeHtml(s) {
-    return String(s)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
-}
-function renderTable(columns, rows, truncated) {
-    const thead = `<thead><tr>${columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>`;
-    const tbody = rows.map(r => `<tr>${r.map(v => `<td>${escapeHtml(v)}</td>`).join('')}</tr>`).join('');
-    const note = truncated ? `<div class="sql-live-note">Results truncated…</div>` : '';
-    return `<table class="sqljs-table">${thead}<tbody>${tbody}</tbody></table>${note}`;
-}
-
 // ---------- Main entry ----------
 export function openSchemaOverlay(ctx) {
     const { worker, sharedId } = ctx || {};
@@ -288,12 +283,12 @@ export function openSchemaOverlay(ctx) {
 
         // 🟩 Handle exec result for preview
         if (type === 'result' && payload?.client === 'schema-preview') {
-            const { columns, rows, truncated } = payload;
+            const results = payload.results || [];
             const preview = el.querySelector('#sql-data-preview');
-            if (!columns) {
+            if (!results.length) {
                 preview.innerHTML = `<div class="sql-data-hint">No results.</div>`;
             } else {
-                preview.innerHTML = renderTable(columns, rows, truncated);
+                preview.innerHTML = renderResults(results);
             }
         }
 
@@ -326,7 +321,7 @@ export function openSchemaOverlay(ctx) {
         }
 
         previewEl.innerHTML = `<div class="sql-data-hint">Loading preview…</div>`;
-        const sql = `SELECT * FROM ${chosen} LIMIT 100;`;
+        const sql = `SELECT * FROM ${quoteIdent(chosen)} LIMIT 100;`;
 
         worker.postMessage({
             id: sharedId,
@@ -363,18 +358,26 @@ async function fetchColumnsAndFks(worker, sharedId, objName) {
     const clientTagFk = `schema-fk-${objName}-${Math.random().toString(36).slice(2)}`;
 
     return new Promise((resolve, reject) => {
-        const result = { info: null, fks: [] };
+        // Fix voor issue #16 punt 1: aparte vlaggen per PRAGMA, zodat we pas
+        // resolven als table_info ÉN foreign_key_list allebei binnen zijn.
+        // (Voorheen: `result.fks` startte als [] — truthy — waardoor de
+        // promise al resolvede vóór de FK-lijst er was en de FK-kolom leeg bleef.)
+        let infoReceived = false;
+        let fkReceived = false;
+        const result = { info: [], fks: [] };
+
         const onMessage = (ev) => {
             const { id, type, payload } = ev.data || {};
             if (id !== sharedId || type !== 'result') return;
+            const r = (payload?.results || [])[0]; // PRAGMA's zijn één statement
+
             if (payload?.client === clientTagInfo) {
                 // PRAGMA table_info → columns: cid,name,type,notnull,dflt_value,pk
-                const r = payload;
-                if (!r.columns) { result.info = []; }
-                else {
+                infoReceived = true;
+                if (r?.columns) {
                     const idx = {};
                     r.columns.forEach((c, i) => idx[c] = i);
-                    result.info = (r.rows || r.values || []).map(row => ({
+                    result.info = (r.rows || []).map(row => ({
                         name: row[idx.name],
                         type: row[idx.type],
                         notnull: !!row[idx.notnull],
@@ -384,18 +387,19 @@ async function fetchColumnsAndFks(worker, sharedId, objName) {
             }
             if (payload?.client === clientTagFk) {
                 // PRAGMA foreign_key_list → id,seq,table,from,to,on_update,on_delete,match
-                const r = payload;
-                if (r.columns) {
+                // Zonder foreign keys komt er geen resultaat: r blijft undefined, fks [].
+                fkReceived = true;
+                if (r?.columns) {
                     const idx = {};
                     r.columns.forEach((c, i) => idx[c] = i);
-                    result.fks = (r.rows || r.values || []).map(row => ({
+                    result.fks = (r.rows || []).map(row => ({
                         table: row[idx.table],
                         from: row[idx.from],
                         to: row[idx.to]
                     }));
                 }
             }
-            if (result.info !== null && result.fks) {
+            if (infoReceived && fkReceived) {
                 worker.removeEventListener('message', onMessage);
                 // join FK info onto columns by 'from' column name
                 const fkByFrom = new Map(result.fks.map(f => [f.from, f]));
@@ -412,12 +416,12 @@ async function fetchColumnsAndFks(worker, sharedId, objName) {
             worker.postMessage({
                 id: sharedId,
                 type: 'exec',
-                payload: { sql: `PRAGMA table_info(${objName});`, client: clientTagInfo, limit: 500 }
+                payload: { sql: `PRAGMA table_info(${quoteIdent(objName)});`, client: clientTagInfo, limit: 500 }
             });
             worker.postMessage({
                 id: sharedId,
                 type: 'exec',
-                payload: { sql: `PRAGMA foreign_key_list(${objName});`, client: clientTagFk, limit: 500 }
+                payload: { sql: `PRAGMA foreign_key_list(${quoteIdent(objName)});`, client: clientTagFk, limit: 500 }
             });
         } catch (e) {
             worker.removeEventListener('message', onMessage);
