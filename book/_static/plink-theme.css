@@ -1,0 +1,198 @@
+/* Plink Labs huisstijl voor de DataBeheer-cursussite (issue #15).
+   Dit bestand mapt de gevendorde Plink-tokens (_static/plink/tokens.css)
+   op de CSS-variabelen van sphinx-book-theme / pydata-sphinx-theme (0.15.x),
+   voor zowel light als dark mode, en geeft een lichte skin aan admonitions,
+   navigatie en tabellen.
+
+   Editor-specifieke styling staat bewust NIET hier maar in
+   _static/sql-editors.css, zodat de geplande CodeMirror-herbouw (issue #17)
+   die apart kan overnemen. Componenten gebruiken de semantische
+   `--plink-*`-tokens en schakelen zo vanzelf mee met het thema. */
+
+@import url("plink/tokens.css");
+
+/* ── typografie (themaonafhankelijk) ─────────────────────
+   Display: Fraunces · Body/UI: Hanken Grotesk · Labels/code: Space Mono.
+   16px blijft de ondergrens voor lopende tekst (projector-leesbaarheid). */
+:root {
+  --pst-font-family-base: var(--plink-font-body);
+  --pst-font-family-heading: var(--plink-font-display);
+  --pst-font-family-monospace: var(--plink-font-mono);
+  --pst-font-size-base: 1rem;
+  --pst-font-weight-heading: var(--plink-display-weight);
+  --pst-admonition-font-weight-heading: 600;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: var(--plink-display-tracking);
+}
+
+/* Sitetitel in de sidebar in de display-letter */
+.navbar-brand .logo__title {
+  font-family: var(--plink-font-display);
+  font-weight: var(--plink-display-weight);
+  letter-spacing: var(--plink-display-tracking);
+  color: var(--plink-text);
+}
+
+/* De lockup-SVG heeft alleen een viewBox; geef hem een vaste breedte */
+.navbar-brand .logo__image {
+  width: min(100%, 200px);
+  height: auto;
+}
+
+/* Deel-titels in de linkersidebar als mono-eyebrows — de "Labs"-signatuur */
+.bd-sidebar-primary p.caption,
+.bd-sidebar-primary p.caption .caption-text {
+  font-family: var(--plink-font-mono);
+  font-size: var(--plink-label);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--plink-label-tracking);
+  color: var(--plink-text-caption);
+}
+
+/* Rechter "op deze pagina"-kopje in dezelfde eyebrow-stijl */
+.bd-sidebar-secondary .page-toc .onthispage {
+  font-family: var(--plink-font-mono);
+  font-size: var(--plink-label);
+  text-transform: uppercase;
+  letter-spacing: var(--plink-label-tracking);
+  color: var(--plink-text-caption);
+}
+
+/* ── light mode ─────────────────────────────────────────── */
+html[data-theme="light"] {
+  /* vlakken: warm papier, vlak, hairlines i.p.v. schaduwen */
+  --pst-color-background: var(--plink-paper);
+  --pst-color-on-background: var(--plink-paper);
+  --pst-color-surface: var(--plink-paper-2);
+  --pst-color-on-surface: var(--plink-ink);
+  --pst-color-shadow: transparent;           /* geen drop shadows */
+  --pst-color-border: var(--plink-hairline);
+  --pst-color-border-muted: rgba(27, 27, 35, 0.09);
+
+  /* tekst */
+  --pst-color-text-base: var(--plink-ink);
+  --pst-color-text-muted: var(--plink-ink-60);
+  --pst-heading-color: var(--plink-ink);
+  --pst-color-heading-color: var(--plink-ink);
+
+  /* de vonk: magenta alleen voor links en primaire acties */
+  --pst-color-primary: var(--plink-magenta);
+  --pst-color-primary-bg: #F8E3EE;
+  --pst-color-primary-highlight: var(--plink-magenta-press);
+  --pst-color-secondary: var(--plink-ink-80);
+  --pst-color-secondary-bg: var(--plink-paper-2);
+  --pst-color-accent: var(--plink-magenta);
+  --pst-color-accent-bg: #F8E3EE;
+  --pst-color-link: var(--plink-magenta);
+  --pst-color-link-hover: var(--plink-magenta-press);
+
+  /* code */
+  --pst-color-inline-code: var(--plink-ink-80);
+  --pst-color-inline-code-links: var(--plink-magenta-press);
+  --pst-color-target: var(--plink-paper-3);
+
+  /* tabellen */
+  --pst-color-table: var(--plink-ink);
+  --pst-color-table-outer-border: var(--plink-hairline-strong);
+  --pst-color-table-inner-border: var(--plink-hairline);
+  --pst-color-table-heading-bg: var(--plink-paper-2);
+  --pst-color-table-row-zebra-high-bg: var(--plink-paper);
+  --pst-color-table-row-zebra-low-bg: #F6F2EA;
+  --pst-color-table-row-hover-bg: var(--plink-paper-3);
+
+  /* admonitions: kalm binnen het palet; magenta alleen waar het
+     echt om aandacht vraagt (warning/danger) — de vonk, met mate */
+  --pst-color-info: var(--plink-ink-80);
+  --pst-color-info-bg: var(--plink-paper-3);
+  --pst-color-success: var(--plink-ink-60);
+  --pst-color-success-bg: var(--plink-paper-3);
+  --pst-color-attention: var(--plink-magenta);
+  --pst-color-attention-bg: #F8E3EE;
+  --pst-color-warning: var(--plink-magenta);
+  --pst-color-warning-bg: #F8E3EE;
+  --pst-color-danger: var(--plink-magenta-press);
+  --pst-color-danger-bg: #F5D7E5;
+}
+
+/* ── dark mode ──────────────────────────────────────────── */
+html[data-theme="dark"] {
+  --pst-color-background: var(--plink-ink);
+  --pst-color-on-background: var(--plink-ink);
+  --pst-color-surface: var(--plink-ink-raised);
+  --pst-color-on-surface: var(--plink-on-ink);
+  --pst-color-shadow: transparent;
+  --pst-color-border: var(--plink-hairline-on-ink);
+  --pst-color-border-muted: rgba(250, 247, 242, 0.10);
+
+  --pst-color-text-base: var(--plink-on-ink);
+  --pst-color-text-muted: #A5A099;
+  --pst-heading-color: var(--plink-on-ink);
+  --pst-color-heading-color: var(--plink-on-ink);
+
+  --pst-color-primary: var(--plink-magenta-on-dark);
+  --pst-color-primary-bg: #3B1A2B;
+  --pst-color-primary-highlight: #F472B6;
+  --pst-color-secondary: #C9C4BB;
+  --pst-color-secondary-bg: var(--plink-ink-raised);
+  --pst-color-accent: var(--plink-magenta-on-dark);
+  --pst-color-accent-bg: #3B1A2B;
+  --pst-color-link: var(--plink-magenta-on-dark);
+  --pst-color-link-hover: #F472B6;
+
+  --pst-color-inline-code: #D8D3CA;
+  --pst-color-inline-code-links: var(--plink-magenta-on-dark);
+  --pst-color-target: #2A2A35;
+
+  --pst-color-table: var(--plink-on-ink);
+  --pst-color-table-outer-border: var(--plink-hairline-on-ink-strong);
+  --pst-color-table-inner-border: var(--plink-hairline-on-ink);
+  --pst-color-table-heading-bg: var(--plink-ink-raised);
+  --pst-color-table-row-zebra-high-bg: var(--plink-ink);
+  --pst-color-table-row-zebra-low-bg: #1F1F28;
+  --pst-color-table-row-hover-bg: #2A2A35;
+
+  --pst-color-info: #C9C4BB;
+  --pst-color-info-bg: var(--plink-ink-raised);
+  --pst-color-success: var(--plink-on-ink-muted);
+  --pst-color-success-bg: var(--plink-ink-raised);
+  --pst-color-attention: var(--plink-magenta-on-dark);
+  --pst-color-attention-bg: #3B1A2B;
+  --pst-color-warning: var(--plink-magenta-on-dark);
+  --pst-color-warning-bg: #3B1A2B;
+  --pst-color-danger: #F472B6;
+  --pst-color-danger-bg: #472033;
+}
+
+/* ── vlak, editorial: hairlines i.p.v. schaduwen ────────── */
+
+/* Admonitions als vlak paneel: linker accentregel + vlakke vulling */
+.admonition, div.admonition {
+  background-color: var(--plink-surface-raised);
+  border-radius: var(--plink-radius);
+}
+
+/* Admonition-titels in de body-letter, niet te zwaar */
+.admonition > .admonition-title,
+div.admonition > .admonition-title {
+  font-family: var(--plink-font-body);
+}
+
+/* Code- en outputcellen: hairline in plaats van de standaard grijze rand */
+div.cell div.cell_input,
+div.cell details.above-input > summary {
+  border-color: var(--plink-border);
+}
+
+/* Zoekveld en dropdowns vlak houden */
+.bd-search {
+  border: 1px solid var(--plink-border);
+  border-radius: var(--plink-radius);
+}
+
+/* Focusring in accentkleur, crisp */
+:focus-visible {
+  outline-color: var(--plink-focus-ring);
+}

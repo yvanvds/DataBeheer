@@ -30,16 +30,18 @@ sphinx:                                              # Options passed on to the 
     language: nl                                     # Defines language (English) of everything except the content itself. For Dutch: replace with `nl`, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     html_js_files:
     - https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js # Required for live code, part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
+    html_css_files:                                  # Plink Labs huisstijl: webfonts Fraunces / Hanken Grotesk / Space Mono via Google Fonts (tokens en thema staan in _static/plink-theme.css en _static/plink/tokens.css, die automatisch geladen worden)
+    - https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..650&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Space+Mono:wght@400;700&display=swap
     thebe_config:
       use_thebe_lite: false                          # Required for live code, part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
       exclude_patterns: ["**/_*.yml", "**/*.md", "**/*.ipynb"] #exclude files which should not be accessible for live code, configuration part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
-    html_favicon: "figures/TB_favicon.ico"           # Replace this with your own favicon, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
+    html_favicon: "_static/plink/plink-mark.svg"     # Plink Labs open-ring mark als favicon, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     html_baseurl:  "hhttps://yvanvds.github.io/DataBeheer/"    # Replace this with your own URL, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     html_theme_options:
       logo:
         text:        Databeheer                        # Replace this with your own book title, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
-        image_light: TeachBooks_logo.svg             # Put your logo for the light mode here (can be the same as image_dark), configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
-        image_dark:  TeachBooks_logo_inverted.svg    # Put your logo for the dark mode here (can be the same as image_light), configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
+        image_light: _static/plink/plink-lockup-light.svg  # Plink Labs lockup (light), configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
+        image_dark:  _static/plink/plink-lockup-dark.svg   # Plink Labs lockup (dark), configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
       repository_url: "https://github.com/yvanvds/DataBeheer" # Add your own repo URL here, configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html)
       path_to_docs:          "book"                  # Required for edit_page_button, should be book if you're using TeachBooks package (https://github.com/TeachBooks/TeachBooks) or the TeachBooks deploy book workflow (https://teachbooks.io/manual/external/deploy-book-workflow/README.html), configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html)
       repository_branch:     "main"                  # Replace when you change the name of your published branch (required for edit_page_button), configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html)

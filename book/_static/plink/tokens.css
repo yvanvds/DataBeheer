@@ -1,0 +1,92 @@
+/* Plink Labs — design tokens, gevendorde kopie voor deze site.
+   Bron: https://github.com/plinklabs/plink-design-system (styles.css + tokens/).
+   De tokens zijn hier met een `--plink-`-prefix genamespaced zodat ze niet
+   botsen met variabelen van sphinx-book-theme/pydata-sphinx-theme of extensies.
+
+   Kernidee van het systeem: ink + paper doen ~90% van het werk; magenta is
+   een vonk, geen verflaag ("a spark, not a coat of paint").
+   Fonts (Fraunces / Hanken Grotesk / Space Mono) worden via Google Fonts
+   geladen in `html.extra_head` van _config.yml. */
+
+:root {
+  /* ── basis: ink + paper ─────────────────────────────── */
+  --plink-ink: #1B1B23;          /* bijna-zwart, warm */
+  --plink-paper: #FAF7F2;        /* warm, rustig papier */
+
+  /* paper-tinten (vlakke verhoogde vlakken — nooit schaduwen) */
+  --plink-paper-2: #F3EFE7;
+  --plink-paper-3: #ECE7DC;
+
+  /* ink-tinten (tekst + hairlines) */
+  --plink-ink-80: #3A3A42;
+  --plink-ink-60: #6E6A62;       /* gedempte bodytekst op paper */
+  --plink-muted: #9A958B;        /* bijschriften, labels */
+  --plink-hairline: rgba(27, 27, 35, 0.14);
+  --plink-hairline-strong: rgba(27, 27, 35, 0.26);
+
+  /* ── de vonk ────────────────────────────────────────── */
+  --plink-magenta: #DB2777;          /* op licht */
+  --plink-magenta-press: #C01F68;    /* hover / ingedrukt */
+  --plink-magenta-on-dark: #EC4899;  /* op ink */
+
+  /* ── op-ink (donkere vlakken) ───────────────────────── */
+  --plink-on-ink: #FAF7F2;
+  --plink-on-ink-muted: #8E8A82;
+  --plink-hairline-on-ink: rgba(250, 247, 242, 0.16);
+  --plink-hairline-on-ink-strong: rgba(250, 247, 242, 0.28);
+
+  /* afgeleide ink-vlakken voor de dark mode van deze site
+     (niet in het design system zelf; afgeleid van --plink-ink) */
+  --plink-ink-raised: #23232C;   /* licht verhoogd vlak op ink */
+  --plink-ink-inset: #15151B;    /* verdiept vlak op ink */
+
+  /* ── typografie ─────────────────────────────────────── */
+  --plink-font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --plink-font-body: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --plink-font-mono: 'Space Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --plink-display-weight: 560;         /* Fraunces variable — zelfverzekerd, niet zwaar */
+  --plink-display-tracking: -0.018em;
+  --plink-label: 0.75rem;              /* 12px — eyebrows, specs, tags */
+  --plink-label-tracking: 0.14em;      /* uppercase eyebrows */
+
+  /* ── geometrie: één taal, crisp ─────────────────────── */
+  --plink-radius-sm: 4px;
+  --plink-radius: 6px;       /* knoppen, inputs */
+  --plink-radius-lg: 8px;    /* alleen grote vlakken */
+}
+
+/* ── semantische tokens per thema ─────────────────────────
+   Het boek heeft een themaschakelaar (html[data-theme="light|dark"]).
+   Componenten (o.a. de SQL-editors) gebruiken deze semantische namen
+   zodat ze automatisch met het thema meeschakelen. */
+
+html[data-theme="light"] {
+  --plink-surface: var(--plink-paper);
+  --plink-surface-raised: var(--plink-paper-2);
+  --plink-surface-inset: var(--plink-paper-3);
+  --plink-text: var(--plink-ink);
+  --plink-text-muted: var(--plink-ink-60);
+  --plink-text-caption: var(--plink-muted);
+  --plink-border: var(--plink-hairline);
+  --plink-border-strong: var(--plink-hairline-strong);
+  --plink-accent: var(--plink-magenta);
+  --plink-accent-press: var(--plink-magenta-press);
+  --plink-on-accent: var(--plink-paper);
+  --plink-focus-ring: var(--plink-magenta);
+}
+
+html[data-theme="dark"] {
+  --plink-surface: var(--plink-ink);
+  --plink-surface-raised: var(--plink-ink-raised);
+  --plink-surface-inset: var(--plink-ink-inset);
+  --plink-text: var(--plink-on-ink);
+  --plink-text-muted: #A5A099;
+  --plink-text-caption: var(--plink-on-ink-muted);
+  --plink-border: var(--plink-hairline-on-ink);
+  --plink-border-strong: var(--plink-hairline-on-ink-strong);
+  --plink-accent: var(--plink-magenta-on-dark);
+  --plink-accent-press: #F472B6;
+  --plink-on-accent: var(--plink-ink);
+  --plink-focus-ring: var(--plink-magenta-on-dark);
+}

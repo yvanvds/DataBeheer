@@ -53,6 +53,70 @@ function loadMonaco() {
   });
 }
 
+// --- Monaco-thema's in de Plink-huisstijl (zie _static/plink/tokens.css) ---
+// Ink + paper dragen het beeld; magenta markeert alleen de keywords.
+function definePlinkThemes(monaco) {
+  monaco.editor.defineTheme('plink-light', {
+    base: 'vs', inherit: true,
+    rules: [
+      { token: '', foreground: '1B1B23' },
+      { token: 'keyword', foreground: 'C01F68' },
+      { token: 'operator.sql', foreground: '3A3A42' },
+      { token: 'predefined.sql', foreground: '3A3A42' },
+      { token: 'string', foreground: '6E6A62' },
+      { token: 'string.sql', foreground: '6E6A62' },
+      { token: 'number', foreground: '3A3A42' },
+      { token: 'comment', foreground: '9A958B', fontStyle: 'italic' },
+      { token: 'identifier', foreground: '1B1B23' },
+    ],
+    colors: {
+      'editor.background': '#FAF7F2',
+      'editor.foreground': '#1B1B23',
+      'editorLineNumber.foreground': '#9A958B',
+      'editorLineNumber.activeForeground': '#1B1B23',
+      'editorCursor.foreground': '#DB2777',
+      'editor.lineHighlightBackground': '#F3EFE7',
+      'editor.selectionBackground': '#ECE7DC',
+      'editorIndentGuide.background': '#ECE7DC',
+    },
+  });
+  monaco.editor.defineTheme('plink-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: '', foreground: 'FAF7F2' },
+      { token: 'keyword', foreground: 'EC4899' },
+      { token: 'operator.sql', foreground: 'D8D3CA' },
+      { token: 'predefined.sql', foreground: 'D8D3CA' },
+      { token: 'string', foreground: 'A5A099' },
+      { token: 'string.sql', foreground: 'A5A099' },
+      { token: 'number', foreground: 'D8D3CA' },
+      { token: 'comment', foreground: '8E8A82', fontStyle: 'italic' },
+      { token: 'identifier', foreground: 'FAF7F2' },
+    ],
+    colors: {
+      'editor.background': '#15151B',
+      'editor.foreground': '#FAF7F2',
+      'editorLineNumber.foreground': '#8E8A82',
+      'editorLineNumber.activeForeground': '#FAF7F2',
+      'editorCursor.foreground': '#EC4899',
+      'editor.lineHighlightBackground': '#23232C',
+      'editor.selectionBackground': '#3B1A2B',
+      'editorIndentGuide.background': '#23232C',
+    },
+  });
+}
+
+function currentPlinkTheme() {
+  return document.documentElement.dataset.theme === 'dark' ? 'plink-dark' : 'plink-light';
+}
+
+// Schakel mee met de themaknop van het boek (data-theme op <html>)
+function watchThemeSwitch(monaco) {
+  monaco.editor.setTheme(currentPlinkTheme());
+  new MutationObserver(() => monaco.editor.setTheme(currentPlinkTheme()))
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+
 // --- Find + wrap SQL cells ---
 function findSqlBlocks() {
   const blocks = [];
@@ -152,6 +216,8 @@ function initEditors(monaco, seedBuf) {
 onReady(async () => {
   try {
     const monaco = await loadMonaco();
+    definePlinkThemes(monaco);
+    watchThemeSwitch(monaco);
 
     const seedUrlRaw = pickPageSeedUrl(); // e.g. "/_static/db/webshop.db"
     const seedUrl = seedUrlRaw?.startsWith('/_static/')

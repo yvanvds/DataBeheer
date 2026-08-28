@@ -1,212 +1,224 @@
-.sql-live-wrap { border: 1px solid #ddd; border-radius: 8px; margin: 1rem 0; }
-.sql-live-toolbar { display:flex; gap:.5rem; align-items:center; padding:.5rem .75rem; border-bottom:1px solid #eee; }
-.sql-live-toolbar .title { font-weight:600; margin-right:auto; }
-.sql-live-editor { height: 260px; }
-.sql-live-output { max-height: 260px; overflow:auto; border-top:1px solid #eee; padding:.5rem .75rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-.sql-live-note { font-size:.85em; opacity:.7; }
+/* SQL-editors — styling van de interactieve SQL-cellen en het schema-overlay.
+   Volgt de Plink Labs huisstijl via de semantische `--plink-*`-tokens uit
+   _static/plink/tokens.css (geladen door _static/plink-theme.css); de tokens
+   schakelen zelf mee met light/dark, dus hier zijn geen aparte
+   dark-mode-blokken meer nodig. Elke var() heeft een statische fallback
+   (de light-waarden) zodat dit bestand ook zonder thema bruikbaar blijft.
 
-/* Light mode (current look) */
+   Let op voor issue #17 (herbouw op CodeMirror 6): dit bestand is de ene
+   plek voor editor-styling — hergebruik de `--sql-*`-tokens hieronder. */
+
+/* ── editor-tokens, afgeleid van de Plink-tokens ───────── */
+:root {
+  --sql-surface: var(--plink-surface, #FAF7F2);            /* editorvlak */
+  --sql-surface-raised: var(--plink-surface-raised, #F3EFE7); /* toolbar, koppen */
+  --sql-surface-inset: var(--plink-surface-inset, #ECE7DC);   /* accordion-body */
+  --sql-text: var(--plink-text, #1B1B23);
+  --sql-text-muted: var(--plink-text-muted, #6E6A62);
+  --sql-border: var(--plink-border, rgba(27, 27, 35, 0.14));
+  --sql-border-strong: var(--plink-border-strong, rgba(27, 27, 35, 0.26));
+  --sql-accent: var(--plink-accent, #DB2777);
+  --sql-accent-press: var(--plink-accent-press, #C01F68);
+  --sql-on-accent: var(--plink-on-accent, #FAF7F2);
+  --sql-focus-ring: var(--plink-focus-ring, #DB2777);
+  --sql-font-mono: var(--plink-font-mono, 'Space Mono', ui-monospace, Menlo, Consolas, monospace);
+  --sql-label-size: var(--plink-label, 0.75rem);
+  --sql-label-tracking: var(--plink-label-tracking, 0.14em);
+  --sql-radius-sm: var(--plink-radius-sm, 4px);
+  --sql-radius: var(--plink-radius, 6px);
+  --sql-radius-lg: var(--plink-radius-lg, 8px);
+}
+
+/* ── de editorcel: vlak paneel met hairline, geen schaduw ── */
+.sql-live-wrap {
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius-lg);
+  margin: 1rem 0;
+  background: var(--sql-surface);
+  overflow: hidden;
+}
+.sql-live-toolbar {
+  display: flex; gap: .5rem; align-items: center;
+  padding: .5rem .75rem;
+  border-bottom: 1px solid var(--sql-border);
+  background: var(--sql-surface-raised);
+}
+/* Titel als mono-eyebrow — de "Labs"-signatuur */
+.sql-live-toolbar .title {
+  margin-right: auto;
+  font-family: var(--sql-font-mono);
+  font-size: var(--sql-label-size);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--sql-label-tracking);
+  color: var(--sql-text-muted);
+}
+.sql-live-editor { height: 260px; }
+.sql-live-output {
+  max-height: 260px; overflow: auto;
+  border-top: 1px solid var(--sql-border);
+  padding: .5rem .75rem;
+  font-family: var(--sql-font-mono);
+  font-size: .875rem;
+  color: var(--sql-text);
+}
+.sql-live-note {
+  font-family: var(--sql-font-mono);
+  font-size: var(--sql-label-size);
+  color: var(--sql-text-muted);
+}
+
+/* ── knoppen: één primaire (Run) met de vonk, de rest hairline ── */
 .sql-live-btn {
   cursor: pointer;
-  padding: .25rem .6rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fafafa;
-  color: #000;
+  padding: .25rem .7rem;
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius);
+  background: transparent;
+  color: var(--sql-text);
+  font-family: var(--plink-font-body, system-ui, sans-serif);
+  font-size: .875rem;
+  font-weight: 500;
+  transition: border-color 140ms ease, background-color 140ms ease;
 }
-
 .sql-live-btn:hover {
-  background: #f0f0f0;
+  border-color: var(--sql-text);
+  background: transparent;
+}
+.sql-live-btn:focus-visible {
+  outline: 2px solid var(--sql-focus-ring);
+  outline-offset: 1px;
+}
+.sql-live-btn.run {
+  background: var(--sql-accent);
+  border-color: var(--sql-accent);
+  color: var(--sql-on-accent);
+}
+.sql-live-btn.run:hover {
+  background: var(--sql-accent-press);
+  border-color: var(--sql-accent-press);
 }
 
-/* Dark mode fix */
-html[data-theme="dark"] .sql-live-btn,
-body[data-theme="dark"] .sql-live-btn {
-  background: #333;
-  border: 1px solid #555;
-  color: #eee;
-}
-
-html[data-theme="dark"] .sql-live-btn:hover,
-body[data-theme="dark"] .sql-live-btn:hover {
-  background: #444;
-}
-
-/* Overlay shell */
+/* ── overlay-shell ───────────────────────────────────────── */
 .sql-schema-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,.5);
+  background: rgba(27, 27, 35, .5);
   display: none; z-index: 9999;
 }
 .sql-schema-overlay.visible { display: block; }
 
-/* Panel */
+/* Paneel: vlak vlak met stevige hairline, geen schaduw */
 .sql-schema-panel {
   width: min(1600px, 95vw);
   height: min(95vh, 800px);
   margin: 5vh auto 0;
-  background: #fff; color: #000;
-  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  background: var(--sql-surface); color: var(--sql-text);
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius-lg);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .sql-schema-header {
   display: flex; align-items: center; gap: .75rem;
-  padding: .6rem .9rem; border-bottom: 1px solid #eee;
-  font-weight: 600;
+  padding: .6rem .9rem;
+  border-bottom: 1px solid var(--sql-border);
+  background: var(--sql-surface-raised);
+  font-family: var(--sql-font-mono);
+  font-size: var(--sql-label-size);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--sql-label-tracking);
+  color: var(--sql-text-muted);
 }
 .sql-schema-close {
   margin-left: auto; cursor: pointer;
-  padding: .25rem .6rem; border: 1px solid #ccc; border-radius: 6px; background: #fafafa;
+  padding: .25rem .7rem;
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius);
+  background: transparent;
+  color: var(--sql-text);
+  font-family: var(--plink-font-body, system-ui, sans-serif);
+  letter-spacing: normal;
+  text-transform: none;
 }
+.sql-schema-close:hover { border-color: var(--sql-text); }
 .sql-schema-body {
   padding: .9rem; overflow: auto; flex: 1;
 }
 
-/* Dark mode */
-html[data-theme="dark"] .sql-schema-panel,
-body[data-theme="dark"] .sql-schema-panel {
-  background: #1e1e1e; color: #eee; border: 1px solid #333;
-}
-html[data-theme="dark"] .sql-schema-header { border-bottom: 1px solid #333; }
-html[data-theme="dark"] .sql-schema-close {
-  background: #333; border: 1px solid #555; color: #eee;
-}
-html[data-theme="dark"] .sql-schema-close:hover { background: #444; }
-
-/* Schema list */
+/* ── schema-lijst ────────────────────────────────────────── */
 .sql-schema-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .sql-schema-section h3 { margin: .25rem 0 .5rem; font-size: 1rem; }
-.sql-schema-list { border: 1px solid #eee; border-radius: 8px; overflow: hidden; background-color: #eee;}
-.sql-schema-list-item { padding: .5rem .75rem; border-top: 1px solid #eee; }
-.sql-schema-list-item:first-child { border-top: none; }
-.sql-schema-empty { opacity: .7; font-style: italic; padding: .25rem 0; }
+.sql-schema-list {
+  border: 1px solid var(--sql-border);
+  border-radius: var(--sql-radius-lg);
+  overflow: hidden;
+  background-color: var(--sql-surface);
+}
+.sql-schema-empty { color: var(--sql-text-muted); font-style: italic; padding: .25rem 0; }
 
-/* Dark */
-html[data-theme="dark"] .sql-schema-list { border-color: #333; background-color: #23272e;  }
-html[data-theme="dark"] .sql-schema-list-item { border-top-color: #333; }
-
-/* Tabs */
+/* ── tabs ────────────────────────────────────────────────── */
 .sql-schema-tabs {
-  display: flex; gap: .25rem; border-bottom: 1px solid #eee; margin-bottom: .75rem;
+  display: flex; gap: .25rem;
+  border-bottom: 1px solid var(--sql-border);
+  margin-bottom: .75rem;
 }
 .sql-schema-tab {
-  padding: .4rem .7rem; border: 1px solid transparent; border-radius: 6px 6px 0 0;
+  padding: .4rem .7rem;
+  border: 1px solid transparent;
+  border-radius: var(--sql-radius) var(--sql-radius) 0 0;
   cursor: pointer; font-weight: 600;
+  background: transparent;
+  color: var(--sql-text);
 }
 .sql-schema-tab[aria-selected="true"] {
-  border-color: #ddd; border-bottom-color: #fff; background: #fff; color: #000;
+  border-color: var(--sql-border);
+  border-bottom-color: var(--sql-surface);
+  background: var(--sql-surface);
+  color: var(--sql-accent);
 }
-.sql-schema-tab[aria-selected="false"] { color: #555; }
+.sql-schema-tab[aria-selected="false"] { color: var(--sql-text-muted); }
 
 .sql-schema-tabpanel { display: none; }
 .sql-schema-tabpanel.active { display: block; }
-
-/* Dark */
-html[data-theme="dark"] .sql-schema-tabs { border-bottom-color: #333; }
-html[data-theme="dark"] .sql-schema-tab[aria-selected="true"] {
-  border-color: #333; border-bottom-color: #1e1e1e; background: #1e1e1e; color: #eee;
-}
-html[data-theme="dark"] .sql-schema-tab[aria-selected="false"] { color: #bbb; }
 
 .sql-data-preview {
   margin-top: 1rem;
   max-height: 350px;
   overflow: auto;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--sql-border);
   padding-top: .75rem;
 }
-html[data-theme="dark"] .sql-data-preview { border-top-color: #333; }
 
-/* Accordion items */
+/* ── accordion ───────────────────────────────────────────── */
 .sql-schema-list-item {
   cursor: pointer;
-}
-.sql-acc-body {
-  display: none;
-  padding: .5rem .75rem .75rem;
-  border-top: 1px dashed #ddd;
-}
-.sql-acc-body.visible { display: block; }
-
-/* Columns table */
-.sql-columns {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .95em;
-}
-.sql-columns th,
-.sql-columns td {
-  border: 1px solid #eee;
-  padding: .25rem .5rem;
-  text-align: left;
-}
-.sql-col-badge {
-  font-size: .8em;
-  opacity: .8;
-  padding: .05rem .35rem;
-  border: 1px solid #ccc;
-  border-radius: .5rem;
-  margin-left: .35rem;
-}
-
-/* Make the schema section scroll if tall */
-.sql-schema-sections {
-  max-height: 60vh;       /* keeps within overlay */
-  overflow: auto;         /* vertical scrollbar if needed */
-  padding-right: .25rem;  /* space for scrollbar */
-}
-
-/* Dark mode tweaks */
-html[data-theme="dark"] .sql-acc-body { border-top-color: #333; }
-html[data-theme="dark"] .sql-columns th,
-html[data-theme="dark"] .sql-columns td { border-color: #333; }
-html[data-theme="dark"] .sql-col-badge { border-color: #555; }
-
-/* ---------- Subtle color tokens ---------- */
-:root {
-  --sql-accent-bg: #f6f8fa;        /* header-ish bg (light) */
-  --sql-accent-border: #e2e7ee;    /* light borders */
-  --sql-accent-text: #0f172a;      /* near-slate text */
-  --sql-muted-bg: #fafafa;         /* muted row bg */
-}
-
-html[data-theme="dark"] {
-  --sql-accent-bg: #23272e;        /* header-ish bg (dark) */
-  --sql-accent-border: #2f3640;    /* dark borders */
-  --sql-accent-text: #eaeef5;      /* light text */
-  --sql-muted-bg: #1a1d22;         /* muted row bg (dark) */
-}
-
-/* ---------- Schema list: focusable headers + accordion ---------- */
-.sql-schema-list-item {
-  cursor: pointer;
-  border-top: 1px solid var(--sql-accent-border);
+  border-top: 1px solid var(--sql-border);
 }
 .sql-schema-list-item:first-child { border-top: none; }
 
-/* The clickable header (behaves like a button) */
+/* De klikbare kop (gedraagt zich als knop) */
 .sql-acc-head {
   padding: .5rem .75rem;
-  background: var(--sql-accent-bg);
-  color: var(--sql-accent-text);
+  background: var(--sql-surface-raised);
+  color: var(--sql-text);
   outline: none;
 }
 .sql-acc-head:hover { filter: brightness(0.98); }
 .sql-acc-head:focus-visible {
-  box-shadow: 0 0 0 2px rgba(99,102,241,.35);
-  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--sql-focus-ring);
+  border-radius: var(--sql-radius-sm, 4px);
 }
 
-/* Accordion body */
+/* Accordion-body */
 .sql-acc-body {
   display: none;
   padding: .5rem .75rem .75rem;
-  border-top: 1px dashed var(--sql-accent-border);
-  background: var(--sql-muted-bg);
+  border-top: 1px dashed var(--sql-border);
+  background: var(--sql-surface-inset);
 }
 .sql-acc-body.visible { display: block; }
 
-/* ---------- Columns table in Schema tab ---------- */
+/* ── kolommentabel in het Schema-tabblad ─────────────────── */
 .sql-columns {
   width: 100%;
   border-collapse: separate;
@@ -217,42 +229,50 @@ html[data-theme="dark"] {
 .sql-columns thead th {
   position: sticky;
   top: 0;
-  background: var(--sql-accent-bg);
-  color: var(--sql-accent-text);
-  border-bottom: 1px solid var(--sql-accent-border);
+  background: var(--sql-surface-raised);
+  color: var(--sql-text);
 }
 .sql-columns th,
 .sql-columns td {
-  border: 1px solid var(--sql-accent-border);
+  border: 1px solid var(--sql-border);
   padding: .35rem .55rem;
   text-align: left;
 }
+.sql-col-badge {
+  font-family: var(--sql-font-mono);
+  font-size: .8em;
+  color: var(--sql-text-muted);
+  padding: .05rem .35rem;
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius-sm, 4px);
+  margin-left: .35rem;
+}
 
-/* ---------- Make Schema pane scroll if content is tall ---------- */
+/* Schema-paneel scrolt zelf als het hoog wordt */
 .sql-schema-sections {
   max-height: 60vh;
   overflow: auto;
   padding-right: .25rem;
 }
 
-/* ---------- Data tab preview table (readability) ---------- */
+/* ── resultaattabel (Data-tab en query-output) ───────────── */
 .sqljs-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: auto;       /* allow natural column widths */
+  table-layout: auto;
 }
 .sqljs-table thead th {
   position: sticky;
   top: 0;
-  background: var(--sql-accent-bg);
-  color: var(--sql-accent-text);
-  border-bottom: 1px solid var(--sql-accent-border);
+  background: var(--sql-surface-raised);
+  color: var(--sql-text);
+  border-bottom: 1px solid var(--sql-border-strong);
 }
 .sqljs-table th,
 .sqljs-table td {
-  border: 1px solid var(--sql-accent-border);
-  padding: .35rem .6rem;    /* <-- spacing between columns */
+  border: 1px solid var(--sql-border);
+  padding: .35rem .6rem;
   vertical-align: top;
-  word-break: break-word;   /* wrap long content */
+  word-break: break-word;
 }
