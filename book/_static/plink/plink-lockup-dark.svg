@@ -1,0 +1,5 @@
+<svg viewBox="0 0 520 140" xmlns="http://www.w3.org/2000/svg" font-family="&#39;Fraunces&#39;, Georgia, serif">
+  <path d="M40 92.3 A30 30 0 1 1 80 92.3" fill="none" stroke="#EC4899" stroke-width="5.4" stroke-linecap="round"></path>
+  <circle cx="60" cy="70" r="9" fill="#EC4899"></circle>
+  <text x="112" y="88" font-size="48" font-weight="600" fill="#FAF7F2" letter-spacing="-1">plink<tspan fill="#8E8A82" font-weight="400"> labs</tspan></text>
+</svg>
