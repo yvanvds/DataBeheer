@@ -53,4 +53,5 @@ parts:
     - file: chapters/BIG_DATA/06_Onderzoeksopdracht
       title: "6. Onderzoeksopdracht: belastingdruk"
     - file: chapters/BIG_DATA/07_Overhoring
-      
+    - file: chapters/BIG_DATA/08_Eindopdracht
+
