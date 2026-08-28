@@ -1,7 +1,9 @@
 """Tests voor de interactieve SQL-editor: Run voert de selectie uit, of anders
 het statement onder de cursor; "Run alles" voert de hele cel uit (issue #34).
 "Download mijn queries" / "Upload mijn queries" bewaren het eigen werk van een
-pagina als .sql-bestand en zetten het terug (issues #30/#35).
+pagina als .sql-bestand en zetten het terug (issues #30/#35). De databank van
+een pagina blijft in de browser bewaard (IndexedDB) en is met "Download mijn
+databank" als .db-bestand te downloaden (issue #41).
 
 Twee lagen:
 
@@ -24,6 +26,7 @@ import functools
 import http.server
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 from pathlib import Path
@@ -79,7 +82,7 @@ def test_html_loads_only_the_editor_module_as_page_script() -> None:
     _ext/sanitize_static_assets.py."""
     if not HTML.is_dir():
         pytest.skip(NO_BUILD)
-    for module in ("sql-statements.js", "sql-queries-file.js"):
+    for module in ("sql-statements.js", "sql-queries-file.js", "sql-db-store.js"):
         assert (HTML / "_static" / module).is_file(), f"{module} niet in de build"
     text = (HTML / PAGE).read_text(encoding="utf-8")
     tags = re.findall(r"<script[^>]*_static/sql-[\w-]+\.js[^>]*>", text)
@@ -384,5 +387,261 @@ def test_upload_works_when_storage_is_blocked(page, site_url, tmp_path) -> None:
         assert editor_values(blocked)[:2] == work
         expect(blocked.locator(".sql-live-own").first).to_be_visible()
         assert errors == [], errors
+    finally:
+        context.close()
+
+
+# --- e2e: de databank bewaren en downloaden (#41) ---------------------------
+
+DB_BADGE = ".sql-live-own-db"  # label "eigen databank" in elke celtoolbar
+work_status = upload_status  # dezelfde statusregel meldt ook opslagproblemen van de databank
+
+# Pagina zonder sql-db-cel (lege startdatabank), afgeleid van de eerste
+# SQL-pagina — zie no_seed_page_url.
+NO_SEED_PAGE = "chapters/SQL/_test_zonder_seed.html"
+
+
+def wait_ready(page) -> None:
+    page.wait_for_function("() => window.sqlLive && window.sqlLive.dbReady === true")
+
+
+def wait_db_saved(page, saved: bool) -> None:
+    """Wacht tot de kopie in IndexedDB geschreven (True) of verwijderd (False) is."""
+    page.wait_for_function("saved => window.sqlLive.dbSaved === saved", arg=saved)
+
+
+def run_all(page, sql: str) -> None:
+    """Zet `sql` in de eerste cel en klikt op "Run alles"."""
+    load_sql(page, sql)
+    cell(page).locator("button.runall").click()
+
+
+def output(page):
+    return cell(page).locator(".sql-live-output")
+
+
+def db_badge(page):
+    return page.locator(DB_BADGE).first
+
+
+def download_database(page, tmp_path: Path) -> Path:
+    with page.expect_download() as download:
+        page.locator(WORK_BAR).locator("button.download-db").click()
+    path = tmp_path / download.value.suggested_filename
+    download.value.save_as(path)
+    return path
+
+
+def tables_in(path: Path) -> list[str]:
+    """Tabelnamen in een gedownload .db-bestand, gelezen met Pythons sqlite3."""
+    assert path.read_bytes()[:16] == b"SQLite format 3\x00", "geen SQLite-bestand"
+    con = sqlite3.connect(path)
+    try:
+        return [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+    finally:
+        con.close()
+
+
+def saved_database_size(page) -> int | None:
+    """Grootte van de kopie in IndexedDB voor deze pagina, of None als er geen staat."""
+    return page.evaluate(
+        """async () => {
+            const names = (await indexedDB.databases()).map(d => d.name);
+            if (!names.includes('sql-live')) return null;
+            const db = await new Promise((ok, err) => {
+                const req = indexedDB.open('sql-live', 1);
+                req.onsuccess = () => ok(req.result);
+                req.onerror = () => err(req.error);
+            });
+            try {
+                if (!db.objectStoreNames.contains('databases')) return null;
+                const record = await new Promise((ok, err) => {
+                    const req = db.transaction('databases').objectStore('databases').get('db:' + location.pathname);
+                    req.onsuccess = () => ok(req.result);
+                    req.onerror = () => err(req.error);
+                });
+                return record ? record.bytes.length : null;
+            } finally {
+                db.close();
+            }
+        }"""
+    )
+
+
+@pytest.fixture(scope="module")
+def no_seed_page_url(site_url):
+    """Een pagina zonder sql-db-cel (lege startdatabank, zoals de bouwlessen van
+    het ERD-deel): de eerste SQL-pagina met de tag van haar seed-cel uitgeschakeld.
+    Tijdelijk in de build gezet, zodat alle relatieve paden (_static) werken."""
+    text = (HTML / PAGE).read_text(encoding="utf-8")
+    assert "tag_sql-db" in text, f"{PAGE} heeft geen sql-db-cel"
+    derived = HTML / NO_SEED_PAGE
+    derived.write_text(text.replace("tag_sql-db", "tag_sql-db-uit"), encoding="utf-8")
+    try:
+        yield site_url + NO_SEED_PAGE
+    finally:
+        derived.unlink(missing_ok=True)
+
+
+def test_download_database_is_the_live_sqlite_file(page, tmp_path) -> None:
+    """"Download mijn databank" levert het actuele SQLite-bestand: de seed
+    (webshop.db) plus wat de leerling er zelf in bouwde — te openen met
+    Pythons sqlite3, dus ook met DB Browser."""
+    run_all(
+        page,
+        "CREATE TABLE mijn_tabel (id INTEGER PRIMARY KEY, naam TEXT);\n"
+        "INSERT INTO mijn_tabel (naam) VALUES ('download');",
+    )
+    expect(output(page)).to_contain_text("OK")
+
+    path = download_database(page, tmp_path)
+    assert path.name == "databank-01_Starten_met_sql.db"
+    assert tables_in(path) == ["customers", "mijn_tabel", "order_lines", "orders", "products"]
+    con = sqlite3.connect(path)
+    try:
+        assert con.execute("SELECT naam FROM mijn_tabel").fetchall() == [("download",)]
+        assert con.execute("SELECT count(*) FROM customers").fetchone()[0] > 0
+    finally:
+        con.close()
+
+    # De export stoort de lopende databank niet.
+    run_all(page, "SELECT count(*) AS na_download FROM mijn_tabel;")
+    expect(result_headers(page)).to_have_text(["na_download"])
+    expect(output(page).locator("td")).to_have_text(["1"])
+
+
+def test_database_changes_survive_a_reload_until_reset_db(page) -> None:
+    """Het scenario uit #41: tabellen bouwen, de pagina later heropenen en
+    verder werken. "Reset db" gaat terug naar de startgegevens — en dat blijft
+    zo na een herlaad."""
+    run_all(
+        page,
+        "CREATE TABLE speler (id INTEGER PRIMARY KEY, naam TEXT);\n"
+        "INSERT INTO speler (naam) VALUES ('Ine');",
+    )
+    expect(output(page)).to_contain_text("OK")
+    expect(db_badge(page)).to_be_visible()  # "eigen databank"
+    wait_db_saved(page, True)
+    assert saved_database_size(page) > 0
+
+    reload(page)
+    expect(db_badge(page)).to_be_visible()  # hersteld uit de opslag, niet opnieuw geseed
+    run_all(page, "SELECT naam AS speler_naam FROM speler;")
+    expect(result_headers(page)).to_have_text(["speler_naam"])
+    expect(output(page).locator("td")).to_have_text(["Ine"])
+
+    cell(page).locator("button.reset").click()
+    wait_ready(page)
+    expect(db_badge(page)).to_be_hidden()
+    wait_db_saved(page, False)
+    assert saved_database_size(page) is None
+    run_all(page, "SELECT naam FROM speler;")
+    expect(output(page)).to_contain_text("no such table: speler")
+
+    reload(page)
+    expect(db_badge(page)).to_be_hidden()
+    run_all(page, "SELECT naam FROM speler;")
+    expect(output(page)).to_contain_text("no such table: speler")
+
+
+def test_select_only_work_saves_no_copy_of_the_database(page) -> None:
+    """Enkel bevragen (het hele SQL-deel) bewaart niets: een bijgewerkte seed
+    komt dan gewoon door, en er staat geen kopie van elke seed in elke browser."""
+    run_all(page, "SELECT 1 AS alleen_lezen;")
+    expect(result_headers(page)).to_have_text(["alleen_lezen"])
+    run_all(page, "UPDATE customers SET first_name = first_name WHERE 0;")  # wijzigt geen rij
+    expect(output(page)).to_contain_text("OK")
+    # Een snapshot zou vóór dit resultaat zijn aangekomen (berichten van de
+    # worker komen in volgorde), dus dit is geen race.
+    run_all(page, "SELECT 2 AS nog_steeds_alleen_lezen;")
+    expect(result_headers(page)).to_have_text(["nog_steeds_alleen_lezen"])
+    expect(db_badge(page)).to_be_hidden()
+    assert page.evaluate("() => window.sqlLive.dbSaved") is False
+    assert saved_database_size(page) is None
+
+
+def test_foreign_keys_setting_survives_saving_the_database(page) -> None:
+    """PRAGMA foreign_keys = ON (ERD-hoofdstuk 1) is een instelling van de
+    verbinding. Het bewaren van een snapshot sluit en heropent die verbinding
+    (zo werkt db.export() in sql.js) en mag de instelling niet stilletjes
+    uitzetten."""
+    run_all(page, "PRAGMA foreign_keys = ON;")
+    expect(output(page)).to_contain_text("OK")
+    run_all(page, "CREATE TABLE fk_test (id INTEGER PRIMARY KEY);")  # wijziging → snapshot
+    expect(output(page)).to_contain_text("OK")
+    expect(db_badge(page)).to_be_visible()
+    run_all(page, "PRAGMA foreign_keys;")
+    expect(result_headers(page)).to_have_text(["foreign_keys"])
+    expect(output(page).locator("td")).to_have_text(["1"])
+
+    cell(page).locator("button.reset").click()  # opruimen voor de volgende tests
+    wait_ready(page)
+    wait_db_saved(page, False)
+
+
+def test_editor_and_download_work_when_indexeddb_is_blocked(page, site_url, tmp_path) -> None:
+    """Geblokkeerde IndexedDB (strenge privacy-instellingen): bouwen en
+    downloaden werken gewoon, alleen blijft er na een herlaad niets bewaard —
+    en dat wordt gemeld, zonder pageerrors."""
+    context = page.context.browser.new_context()
+    blocked = context.new_page()
+    blocked.add_init_script(
+        "window.indexedDB.open = () => { throw new DOMException('IndexedDB is geblokkeerd', 'SecurityError'); };"
+    )
+    errors: list[str] = []
+    blocked.on("pageerror", lambda exc: errors.append(str(exc)))
+    try:
+        blocked.goto(site_url + PAGE)
+        wait_ready(blocked)
+        run_all(
+            blocked,
+            "CREATE TABLE blok (id INTEGER PRIMARY KEY, naam TEXT);\n"
+            "INSERT INTO blok (naam) VALUES ('geblokkeerd');",
+        )
+        expect(output(blocked)).to_contain_text("OK")
+        expect(db_badge(blocked)).to_be_visible()  # de databank bevat eigen werk...
+        expect(work_status(blocked)).to_contain_text("kon in deze browser niet bewaard worden")  # ...dat niet bewaard blijft
+
+        path = download_database(blocked, tmp_path)  # de download werkt wel
+        assert "blok" in tables_in(path)
+
+        reload(blocked)
+        expect(db_badge(blocked)).to_be_hidden()
+        run_all(blocked, "SELECT naam FROM blok;")
+        expect(output(blocked)).to_contain_text("no such table: blok")
+        assert errors == [], errors
+    finally:
+        context.close()
+
+
+def test_page_without_seed_starts_empty_and_keeps_what_you_build(page, no_seed_page_url, tmp_path) -> None:
+    """Pagina zonder sql-db-cel: een lege startdatabank. Wat je bouwt blijft
+    bewaard en is als .db-bestand te downloaden — het scenario van de
+    bouwlessen in het ERD-deel."""
+    context = page.context.browser.new_context()
+    fresh = context.new_page()
+    try:
+        fresh.goto(no_seed_page_url)
+        wait_ready(fresh)
+        run_all(fresh, "SELECT name FROM sqlite_master WHERE type = 'table';")
+        expect(output(fresh)).to_contain_text("geen resultaatrijen")  # leeg begonnen
+        expect(db_badge(fresh)).to_be_hidden()
+
+        run_all(
+            fresh,
+            "CREATE TABLE ploeg (id INTEGER PRIMARY KEY, naam TEXT);\n"
+            "INSERT INTO ploeg (naam) VALUES ('Rood');",
+        )
+        expect(output(fresh)).to_contain_text("OK")
+        wait_db_saved(fresh, True)
+
+        reload(fresh)
+        expect(db_badge(fresh)).to_be_visible()
+        run_all(fresh, "SELECT naam FROM ploeg;")
+        expect(output(fresh).locator("td")).to_have_text(["Rood"])
+
+        path = download_database(fresh, tmp_path)
+        assert path.name == "databank-_test_zonder_seed.db"
+        assert tables_in(path) == ["ploeg"]
     finally:
         context.close()
