@@ -1,8 +1,9 @@
 """Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36),
 de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
-het ERD-deel op de site-editor (issue #42) en de verankering van de
-onderzoekscompetenties in het Big Data-deel (issue #37) en de les kritisch werken
-met AI die daarnaast staat (issue #38).
+het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
+interactieve cellen (issue #43) en de verankering van de onderzoekscompetenties
+in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
+staat (issue #38).
 
 Draaien met de projectomgeving (PyYAML zit in de teachbooks-installatie):
 
@@ -112,6 +113,15 @@ DOWNLOAD_DB_BUTTON = "Download mijn databank"
 # van de pagina: de cafetaria-les voert de regel in een eigen cel uit en zegt
 # dat je ze na het heropenen van de pagina opnieuw uitvoert.
 FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON;"
+FOREIGN_KEYS_CHECK = "PRAGMA foreign_keys;"
+
+# Interactieve cellen (issue #43): de editor geeft de celinhoud aan SQLite
+# (sql.js), en SQL kent alleen `--` en `/* … */` als commentaar. Een regel die
+# met `#` of `//` begint is een syntaxfout — met "Run alles" altijd, met Run
+# zodra de cursor op die regel staat. Deze tags markeren de cellen die de
+# editor uitvoert (sql-editors.js).
+SQL_CELL_TAGS = ("sql-db", "sql-live")
+NON_SQL_COMMENT = re.compile(r"^\s*(#|//)")
 
 # Onderzoekscompetenties (issue #37): één pagina in het Big Data-deel definieert
 # zes competenties (C1..C6) met een rubric en een opbouwtabel; elk hoofdstuk
@@ -458,6 +468,44 @@ def test_cafetaria_lesson_switches_foreign_keys_on_in_a_runnable_cell() -> None:
     rel = "chapters/ERD/05_de_cafetaria"
     pragma_cells = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_ON in sql]
     assert len(pragma_cells) >= 2, f"{rel}: {FOREIGN_KEYS_ON} hoort in een eigen cel bij fase 6 én als herinnering bij fase 7"
+    text = source_of(rel)
+    assert re.search(
+        r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;`|`PRAGMA foreign_keys = ON;`.{0,160}\bopnieuw\b",
+        text,
+        flags=re.DOTALL,
+    ), f"{rel}: legt niet uit dat je {FOREIGN_KEYS_ON} na het heropenen van de pagina opnieuw uitvoert"
+    assert "Reset db" in text, f"{rel}: noemt Reset db niet (zet de instelling ook uit)"
+
+
+def test_sql_cells_use_only_sql_comments() -> None:
+    """Issue #43: een `#`-regel in een sql-live-cel van ERD hoofdstuk 1 gaf met
+    "Run alles" een syntaxfout in sql.js. Geen enkele sql-db- of sql-live-cel
+    in het boek mag een regel hebben die met `#` of `//` begint."""
+    problems = []
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            for tag in SQL_CELL_TAGS:
+                for n, sql in enumerate(code_cells_tagged(rel, tag), 1):
+                    for line in sql.splitlines():
+                        if NON_SQL_COMMENT.match(line):
+                            problems.append(f"{rel}: {tag}-cel {n}: {line.strip()!r}")
+    assert not problems, "geen SQL-commentaar (gebruik -- of /* … */):\n" + "\n".join(problems)
+
+
+def test_first_erd_page_checks_foreign_keys_like_the_cafetaria_lesson() -> None:
+    """ERD hoofdstuk 1, §5 (#43): de controlecel voert PRAGMA foreign_keys uit,
+    zet de instelling aan zoals hoofdstuk 5 (6.2) en controleert opnieuw — één
+    cel die met "Run alles" 0 en dan 1 laat zien. De tekst zegt, net als daar,
+    dat de instelling na het heropenen van de pagina of Reset db weer uit staat."""
+    rel = FIRST_ERD
+    cells = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_CHECK in sql]
+    assert len(cells) == 1, f"{rel}: verwachtte precies één sql-live-cel met {FOREIGN_KEYS_CHECK}, vond {len(cells)}"
+    sql = cells[0]
+    assert FOREIGN_KEYS_ON in sql, f"{rel}: de controlecel zet de instelling niet aan met {FOREIGN_KEYS_ON}"
+    assert sql.index(FOREIGN_KEYS_CHECK) < sql.index(FOREIGN_KEYS_ON) < sql.rindex(FOREIGN_KEYS_CHECK), (
+        f"{rel}: de controlecel hoort te controleren, aan te zetten en opnieuw te controleren:\n{sql}"
+    )
     text = source_of(rel)
     assert re.search(
         r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;`|`PRAGMA foreign_keys = ON;`.{0,160}\bopnieuw\b",
