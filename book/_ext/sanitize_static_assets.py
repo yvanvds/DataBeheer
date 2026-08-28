@@ -43,8 +43,11 @@ _KEEP_JS_MODULE = {
     "sql-editors.js",  # bootstrapt de SQL-editors; laadt de rest zelf
 }
 
-# Relatieve paden die geen klassiek paginascript zijn.
-_DROP_PREFIXES = ("codemirror/", "sqljs/")
+# Relatieve paden die geen klassiek paginascript zijn. tippy/ en mathjax/
+# (issue #28) bevatten gevendorde bibliotheken die gericht geladen worden:
+# popper/tippy via de tippy_js-config van teachbooks_sphinx_tippy, MathJax
+# via mathjax_path (zie _ext/vendor_mathjax.py).
+_DROP_PREFIXES = ("codemirror/", "sqljs/", "tippy/", "mathjax/")
 _DROP_JS = {
     "sql-overlay.js",  # ES-module, dynamisch geimporteerd door sql-editors.js
     "sql-worker.js",   # workerscript, gestart via new Worker(...)
