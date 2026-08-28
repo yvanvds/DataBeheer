@@ -36,7 +36,7 @@ sphinx:                                              # Options passed on to the 
       use_thebe_lite: false                          # Required for live code, part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
       exclude_patterns: ["**/_*.yml", "**/*.md", "**/*.ipynb"] #exclude files which should not be accessible for live code, configuration part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
     html_favicon: "_static/plink/plink-mark.svg"     # Plink Labs open-ring mark als favicon, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
-    html_baseurl:  "hhttps://yvanvds.github.io/DataBeheer/"    # Replace this with your own URL, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
+    html_baseurl:  "https://yvanvds.github.io/DataBeheer/"    # Replace this with your own URL, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     html_theme_options:
       logo:
         text:        Databeheer                        # Replace this with your own book title, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
