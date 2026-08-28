@@ -14,7 +14,9 @@
 //     die runaway queries stopt en de database opnieuw seedt;
 //   - schema-aware autocomplete via @codemirror/lang-sql, na elke geslaagde
 //     Run ververst (CREATE TABLE-lessen);
-//   - haakje voor opslag van leerlingqueries (#14): window.sqlLive.editors.
+//   - leerlingqueries worden per cel bewaard in localStorage (#14): bij het
+//     heropenen van de pagina staat het eigen werk er weer, en de knop
+//     "Startcode" zet de originele opgave terug.
 
 import {
   EditorState, Compartment,
@@ -53,6 +55,37 @@ function resolveStatic(url) {
 function onReady(cb) {
   if (/complete|interactive/.test(document.readyState)) cb();
   else document.addEventListener('DOMContentLoaded', cb, { once: true });
+}
+
+// --- Opslag van leerlingqueries (#14) ---
+// Sleutel per editor: `sql:{pad}:{index}`, met de index uit de volgorde van
+// findSqlBlocks(). Bewust géén hash van de startcode in de sleutel: een
+// typo-fix in een opgave mag het bewaarde leerlingwerk niet wissen. De weg
+// terug naar de opgave is de knop "Startcode"; zolang de celinhoud afwijkt
+// van de startcode toont de toolbar "eigen versie".
+// localStorage kan geblokkeerd zijn (private browsing) of vol zitten: elke
+// toegang zit in try/catch en de editor werkt dan gewoon zonder opslag.
+const SAVE_DEBOUNCE_MS = 500;
+
+function storageKey(index) {
+  return `sql:${location.pathname}:${index}`;
+}
+
+function readSaved(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null; // opslag geblokkeerd — start gewoon met de startcode
+  }
+}
+
+function writeSaved(key, value, initialDoc) {
+  try {
+    if (value === initialDoc) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    /* opslag geblokkeerd of vol — geen opslag, wel een werkende editor */
+  }
 }
 
 // --- Render-helpers (ook gebruikt door sql-overlay.js) ---
@@ -116,8 +149,10 @@ function wrapCell(cell) {
   wrap.innerHTML = `
     <div class="sql-live-toolbar">
       <span class="title">Interactieve SQL</span>
+      <span class="sql-live-own" hidden title="Deze cel toont jouw bewaarde versie, niet de originele startcode">eigen versie</span>
       <button class="sql-live-btn run">Run</button>
-      <button class="sql-live-btn reset">Reset</button>
+      <button class="sql-live-btn startcode" title="Zet de originele startcode van deze cel terug">Startcode</button>
+      <button class="sql-live-btn reset" title="Zet de databank terug naar de startgegevens (je query blijft staan)">Reset db</button>
       <button class="sql-live-btn schema">Schema</button>
       <span class="sql-live-note">Ctrl/Cmd+Enter om uit te voeren</span>
     </div>
@@ -128,7 +163,9 @@ function wrapCell(cell) {
   return {
     editorEl: wrap.querySelector('.sql-live-editor'),
     outputEl: wrap.querySelector('.sql-live-output'),
+    ownEl: wrap.querySelector('.sql-live-own'),
     runBtn: wrap.querySelector('.run'),
+    startBtn: wrap.querySelector('.startcode'),
     resetBtn: wrap.querySelector('.reset'),
     schemaBtn: wrap.querySelector('.schema'),
   };
@@ -360,21 +397,41 @@ function editorExtensions(langCompartment, run, onDocChange) {
 function initEditors(blocks) {
   blocks.forEach(({ cell, initialSql }, index) => {
     const ui = wrapCell(cell);
-    const doc = initialSql || 'SELECT 1;';
+    const initialDoc = initialSql || 'SELECT 1;';
+    const key = storageKey(index);
+    const saved = readSaved(key);
+    const doc = saved ?? initialDoc; // bewaard leerlingwerk wint van de startcode (#14)
     const client = 'cell-' + index;
     clients.set(client, ui.outputEl);
 
     const langCompartment = new Compartment();
     const changeListeners = [];
-    const rec = { client, outputEl: ui.outputEl, langCompartment, view: null };
+    const rec = { client, outputEl: ui.outputEl, langCompartment, view: null, flush: null };
+
+    // Opslag (#14): debounced bij typen, meteen bij Run en bij het verlaten
+    // van de pagina. Gelijk aan de startcode = niets te bewaren (sleutel weg),
+    // en dan verdwijnt ook de indicator "eigen versie".
+    let saveTimer = null;
+    const syncStorage = () => {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      const value = view.state.doc.toString();
+      writeSaved(key, value, initialDoc);
+      ui.ownEl.hidden = value === initialDoc;
+    };
+    const scheduleSync = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(syncStorage, SAVE_DEBOUNCE_MS);
+    };
+    const run = () => { syncStorage(); runQuery(rec); };
 
     const view = new EditorView({
       state: EditorState.create({
         doc,
         extensions: editorExtensions(
           langCompartment,
-          () => runQuery(rec),
+          run,
           () => {
+            scheduleSync();
             const value = view.state.doc.toString();
             changeListeners.forEach(cb => { try { cb(value); } catch { /* listener-fout negeren */ } });
           },
@@ -383,23 +440,38 @@ function initEditors(blocks) {
       parent: ui.editorEl,
     });
     rec.view = view;
+    rec.flush = syncStorage;
     cells.push(rec);
+    ui.ownEl.hidden = doc === initialDoc;
 
-    ui.runBtn.addEventListener('click', () => runQuery(rec));
+    ui.runBtn.addEventListener('click', run);
+    ui.startBtn.addEventListener('click', () => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: initialDoc },
+      });
+      syncStorage(); // verwijdert de bewaarde versie en verbergt "eigen versie"
+      view.focus();
+    });
     ui.resetBtn.addEventListener('click', resetDatabase);
     ui.schemaBtn.addEventListener('click', openSchema);
 
-    // Publieke API per cel — haakje voor opslag van leerlingqueries (#14).
+    // Publieke API per cel (#14) — dezelfde sleutel als in localStorage.
     editorsApi.push({
-      key: `${location.pathname}#sql-live-${index}`,
+      key,
       index,
-      initialValue: doc,
+      initialValue: initialDoc,
       getValue: () => view.state.doc.toString(),
       setValue: (text) => view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: String(text) },
       }),
       onChange: (cb) => { changeListeners.push(cb); },
     });
+  });
+
+  // Nog niet weggeschreven wijzigingen (debounce) alsnog bewaren bij het
+  // verlaten of verbergen van de pagina.
+  window.addEventListener('pagehide', () => {
+    cells.forEach(c => { try { c.flush?.(); } catch { /* opslag mag nooit blokkeren */ } });
   });
 }
 

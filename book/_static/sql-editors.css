@@ -57,6 +57,7 @@ html[data-theme="dark"] {
 }
 .sql-live-toolbar {
   display: flex; gap: .5rem; align-items: center;
+  flex-wrap: wrap; /* extra knoppen (#14) mogen op smalle schermen doorschuiven */
   padding: .5rem .75rem;
   border-bottom: 1px solid var(--sql-border);
   background: var(--sql-surface-raised);
@@ -84,6 +85,15 @@ html[data-theme="dark"] {
   font-family: var(--sql-font-mono);
   font-size: var(--sql-label-size);
   color: var(--sql-text-muted);
+}
+/* Indicator (#14): deze cel toont een eigen, in deze browser bewaarde versie
+   in plaats van de originele startcode. Subtiel caption-label naast de knoppen. */
+.sql-live-own {
+  font-family: var(--sql-font-mono);
+  font-size: var(--sql-label-size);
+  letter-spacing: var(--sql-label-tracking);
+  text-transform: uppercase;
+  color: var(--sql-text-caption);
 }
 .sql-live-error {
   font-family: var(--sql-font-mono);
