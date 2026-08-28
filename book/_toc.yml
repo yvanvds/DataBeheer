@@ -28,17 +28,6 @@ parts:
       - file: chapters/SQL/05c_Detective
       - file: chapters/SQL/05d_Query_race
     - file: chapters/SQL/06_Herhaling
-  - caption: Databases Ontwerpen met ERD's
-    numbered: false
-    style: numerical
-    restart_numbering: false
-    chapters:
-    - file: chapters/ERD/01_Inleiding_tot_ERD
-    - file: chapters/ERD/02_normalisatie
-    - file: chapters/ERD/03_ERD_tekenen
-    - file: chapters/ERD/04_de_voetbal
-    - file: chapters/ERD/05_de_cafetaria
-    - file: chapters/ERD/06_client_server
   - caption: Big Data
     numbered: false
     style: numerical
@@ -55,4 +44,15 @@ parts:
       title: "6. Onderzoeksopdracht: belastingdruk"
     - file: chapters/BIG_DATA/07_Overhoring
     - file: chapters/BIG_DATA/08_Eindopdracht
+  - caption: Databases Ontwerpen met ERD's
+    numbered: false
+    style: numerical
+    restart_numbering: false
+    chapters:
+    - file: chapters/ERD/01_Inleiding_tot_ERD
+    - file: chapters/ERD/02_normalisatie
+    - file: chapters/ERD/03_ERD_tekenen
+    - file: chapters/ERD/04_de_voetbal
+    - file: chapters/ERD/05_de_cafetaria
+    - file: chapters/ERD/06_client_server
 
