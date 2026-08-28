@@ -34,6 +34,8 @@ parts:
     restart_numbering: false
     chapters:
     - file: chapters/BIG_DATA/01_Inleiding
+      sections:
+      - file: chapters/BIG_DATA/01b_Onderzoekscompetenties
     - file: chapters/BIG_DATA/02_Power_BI
     - file: chapters/BIG_DATA/03_Onderzoeksopdracht
       title: "3. Onderzoeksopdracht: werkloosheid"
