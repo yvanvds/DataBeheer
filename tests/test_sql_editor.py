@@ -3,7 +3,9 @@ het statement onder de cursor; "Run alles" voert de hele cel uit (issue #34).
 "Download mijn queries" / "Upload mijn queries" bewaren het eigen werk van een
 pagina als .sql-bestand en zetten het terug (issues #30/#35). De databank van
 een pagina blijft in de browser bewaard (IndexedDB) en is met "Download mijn
-databank" als .db-bestand te downloaden (issue #41).
+databank" als .db-bestand te downloaden (issue #41). Daarop draaien de
+bouwlessen van het ERD-deel (hoofdstuk 4 en 5, pagina's zonder seed) volledig
+op de site (issue #42).
 
 Twee lagen:
 
@@ -643,5 +645,278 @@ def test_page_without_seed_starts_empty_and_keeps_what_you_build(page, no_seed_p
         path = download_database(fresh, tmp_path)
         assert path.name == "databank-_test_zonder_seed.db"
         assert tables_in(path) == ["ploeg"]
+    finally:
+        context.close()
+
+
+# --- e2e: de bouwlessen van het ERD-deel (#42) -------------------------------
+
+# ERD hoofdstuk 4 (de voetbal) en 5 (de cafetaria) bouwen een databank van nul
+# op de site-editor: pagina's zonder sql-db-cel. Ze starten leeg, wat je bouwt
+# blijft bewaard (#41) en "Download mijn databank" levert het in te dienen
+# .db-bestand. De cafetaria-les wordt hier van fase 4 tot 7 gedraaid met de
+# startcode van haar eigen cellen — de twee opdrachtcellen die de leerling
+# zelf schrijft, krijgen een oplossing — en elke "wat moet je zien?"-claim
+# van de les wordt nagekeken.
+VOETBAL_PAGE = "chapters/ERD/04_de_voetbal.html"
+CAFETARIA_PAGE = "chapters/ERD/05_de_cafetaria.html"
+
+# Startcode-ankers van de opdrachtcellen in de cafetaria-les.
+CAFETARIA_TASK_1 = "-- Fase 4, opdracht 1"
+CAFETARIA_TASK_2 = "-- Fase 5, opdracht"
+
+CAFETARIA_TABLES = """\
+CREATE TABLE leerlingen (leerling_id INTEGER PRIMARY KEY, naam TEXT, klas TEXT);
+CREATE TABLE producten (product_id INTEGER PRIMARY KEY, naam TEXT, prijs REAL);
+CREATE TABLE bestellingen (bestelling_id INTEGER PRIMARY KEY, datum TEXT, status TEXT, leerling_id INTEGER);
+CREATE TABLE bestelling_lijnen (bestellijn_id INTEGER PRIMARY KEY, bestelling_id INTEGER, product_id INTEGER, aantal INTEGER);
+"""
+
+CAFETARIA_TABLES_WITH_CONSTRAINTS = """\
+CREATE TABLE leerlingen (
+  leerling_id INTEGER PRIMARY KEY,
+  naam TEXT NOT NULL CHECK (naam <> ''),
+  klas TEXT NOT NULL
+);
+CREATE TABLE producten (
+  product_id INTEGER PRIMARY KEY,
+  naam TEXT NOT NULL CHECK (naam <> ''),
+  prijs REAL NOT NULL CHECK (prijs >= 0)
+);
+CREATE TABLE bestellingen (
+  bestelling_id INTEGER PRIMARY KEY,
+  datum TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'betaald', 'geannuleerd')),
+  leerling_id INTEGER NOT NULL
+);
+CREATE TABLE bestelling_lijnen (
+  bestellijn_id INTEGER PRIMARY KEY,
+  bestelling_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  aantal INTEGER NOT NULL CHECK (aantal > 0)
+);
+"""
+
+TABLES_PROBE = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"
+
+
+def open_fresh(page, site_url: str, path: str):
+    """Een nieuwe browsercontext (lege opslag) met de pagina geladen tot de database klaar is."""
+    context = page.context.browser.new_context()
+    fresh = context.new_page()
+    fresh.goto(site_url + path)
+    wait_ready(fresh)
+    return context, fresh
+
+
+def cell_at(page, index: int):
+    return page.locator(".sql-live-wrap").nth(index)
+
+
+def output_at(page, index: int):
+    return cell_at(page, index).locator(".sql-live-output")
+
+
+def find_cell(page, needle: str, exact: bool = False) -> int:
+    """Index van de eerste cel waarvan de startcode `needle` bevat (of, met exact, precies is)."""
+    index = page.evaluate(
+        "([needle, exact]) => window.sqlLive.editors.findIndex("
+        "e => exact ? e.initialValue === needle : e.initialValue.includes(needle))",
+        [needle, exact],
+    )
+    assert index >= 0, f"geen cel met startcode die {needle!r} {'is' if exact else 'bevat'}"
+    return index
+
+
+def run_cell(page, index: int, sql: str | None = None):
+    """Klikt "Run alles" in cel `index` (met de startcode, of met `sql` erin gezet) en geeft de uitvoer."""
+    if sql is not None:
+        set_editor(page, index, sql)
+    cell_at(page, index).locator("button.runall").click()
+    out = output_at(page, index)
+    expect(out).not_to_contain_text("Bezig")
+    return out
+
+
+def probe(page, index: int, sql: str) -> str:
+    """Voert `sql` uit in cel `index` en zet daarna de startcode van die cel terug."""
+    text = run_cell(page, index, sql).inner_text()
+    click_startcode(page, index)
+    return text
+
+
+def run_lines_one_by_one(page, index: int) -> dict[str, bool]:
+    """Voert elke statementregel van cel `index` apart uit zoals de les vraagt
+    (cursor op de regel, Ctrl+Enter — Run voert alleen dat statement uit) en
+    geeft per regel of ze lukte."""
+    outcomes: dict[str, bool] = {}
+    for line in initial_values(page)[index].splitlines():
+        if not line.strip() or line.lstrip().startswith("--"):
+            continue
+        cell_at(page, index).locator(".cm-line", has_text=re.compile(rf"^\s*{re.escape(line)}\s*$")).click()
+        page.keyboard.press("Control+Enter")
+        out = output_at(page, index)
+        expect(out).not_to_contain_text("Bezig")
+        outcomes[line] = "Fout:" not in out.inner_text()
+    return outcomes
+
+
+def failing_lines(outcomes: dict[str, bool]) -> list[str]:
+    return [line for line, ok in outcomes.items() if not ok]
+
+
+def row_count(path: Path, table: str) -> int:
+    con = sqlite3.connect(path)
+    try:
+        return con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+    finally:
+        con.close()
+
+
+def test_voetbal_page_starts_empty_keeps_what_you_build_and_exports_it(page, site_url, tmp_path) -> None:
+    """Hoofdstuk 4: een pagina zonder sql-db-cel start leeg; het voorbeeld uit
+    stap 7 draait in de cellen zelf, overleeft een herlaad, wordt als
+    databank-04_de_voetbal.db gedownload, en Reset db maakt de databank weer leeg."""
+    context, fresh = open_fresh(page, site_url, VOETBAL_PAGE)
+    try:
+        own = find_cell(fresh, "-- Stap 7: jullie voetbaldatabank")  # de opdrachtcel, hier als proefcel
+        assert "geen resultaatrijen" in probe(fresh, own, TABLES_PROBE)  # leeg begonnen
+        expect(db_badge(fresh)).to_be_hidden()
+
+        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE spelers"))).to_contain_text("OK")
+        expect(run_cell(fresh, find_cell(fresh, "INSERT INTO spelers"))).to_contain_text("OK")
+        expect(run_cell(fresh, find_cell(fresh, "UPDATE spelers"))).to_contain_text("OK")
+        wait_db_saved(fresh, True)
+
+        reload(fresh)
+        expect(db_badge(fresh)).to_be_visible()  # hersteld uit de opslag
+        assert "J. Peeters" in probe(fresh, own, "SELECT naam FROM spelers;")
+
+        path = download_database(fresh, tmp_path)
+        assert path.name == "databank-04_de_voetbal.db"
+        assert tables_in(path) == ["spelers"]
+        con = sqlite3.connect(path)
+        try:
+            assert con.execute("SELECT speler_id, naam FROM spelers").fetchall() == [(1, "J. Peeters")]
+        finally:
+            con.close()
+
+        expect(run_cell(fresh, find_cell(fresh, "DROP TABLE spelers"))).to_contain_text("OK")
+        assert "geen resultaatrijen" in probe(fresh, own, TABLES_PROBE)
+
+        # Reset db op een pagina zonder seed: weer een lege databank, ook na herladen.
+        cell_at(fresh, own).locator("button.reset").click()
+        wait_ready(fresh)
+        wait_db_saved(fresh, False)
+        expect(db_badge(fresh)).to_be_hidden()
+        reload(fresh)
+        assert "geen resultaatrijen" in probe(fresh, own, TABLES_PROBE)
+    finally:
+        context.close()
+
+
+def test_cafetaria_lesson_runs_end_to_end_on_the_site_editor(page, site_url, tmp_path) -> None:
+    """Hoofdstuk 5 van fase 4 tot 7 op de site-editor: zonder constraints →
+    met constraints → met foreign keys, met de startcode van de cellen zelf.
+    Onderweg: de databank overleeft een herlaad, PRAGMA foreign_keys = ON
+    werkt in een cel, en de download is het volledige SQLite-bestand."""
+    context, fresh = open_fresh(page, site_url, CAFETARIA_PAGE)
+    try:
+        task1 = find_cell(fresh, CAFETARIA_TASK_1)
+        task2 = find_cell(fresh, CAFETARIA_TASK_2)
+        pragma = find_cell(fresh, "PRAGMA foreign_keys = ON;")
+        pragma_again = find_cell(fresh, "-- Fase 7: eerst foreign keys aan")
+        assert task1 < task2 < pragma < pragma_again
+        last = len(initial_values(fresh)) - 1
+
+        # Leeg begonnen: geen seed, geen tabellen.
+        assert "geen resultaatrijen" in probe(fresh, task1, TABLES_PROBE)
+        expect(db_badge(fresh)).to_be_hidden()
+
+        # Fase 4 — zonder constraints: alles lukt, ook de foute gegevens.
+        expect(run_cell(fresh, task1, CAFETARIA_TABLES)).to_contain_text("OK")
+        drop_all = find_cell(
+            fresh,
+            "DROP TABLE bestelling_lijnen;\nDROP TABLE bestellingen;\nDROP TABLE producten;\nDROP TABLE leerlingen;",
+            exact=True,
+        )
+        for index in range(task1 + 1, drop_all):
+            out = run_cell(fresh, index)
+            expect(out).not_to_contain_text("Fout:")
+        overview = output_at(fresh, find_cell(fresh, "-- 3.1"))
+        expect(overview.locator("span.sql-null")).not_to_have_count(0)  # bestelling voor leerling 999
+        expect(output_at(fresh, find_cell(fresh, "-- 3.5")).locator("tbody tr")).to_have_count(6)
+        wait_db_saved(fresh, True)
+
+        # Herladen: de databank staat er nog (zoals tussen twee lessen).
+        reload(fresh)
+        expect(db_badge(fresh)).to_be_visible()
+        assert "3" in probe(fresh, task1, "SELECT count(*) AS leerlingen FROM leerlingen;")
+        assert "6" in probe(fresh, task1, "SELECT count(*) AS lijnen FROM bestelling_lijnen;")
+
+        # Fase 5 — met constraints: precies de drie rijen uit de les worden geweigerd.
+        expect(run_cell(fresh, drop_all)).to_contain_text("OK")
+        expect(run_cell(fresh, task2, CAFETARIA_TABLES_WITH_CONSTRAINTS)).to_contain_text("OK")
+        refused = []
+        for needle in ("INSERT INTO leerlingen (naam, klas) VALUES ('Aya",
+                       "INSERT INTO producten (naam, prijs) VALUES ('Kaasbroodje', 2.50);",
+                       "INSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'open', 1);\nINSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'betaald', 2);\nINSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'klaar', 3);",
+                       "INSERT INTO bestelling_lijnen (bestelling_id, product_id, aantal) VALUES (3, 1, 0);"):
+            refused += failing_lines(run_lines_one_by_one(fresh, find_cell(fresh, needle)))
+        assert refused == [
+            "INSERT INTO producten (naam, prijs) VALUES ('Chocomelk', -1.50);",
+            "INSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'klaar', 3);",
+            "INSERT INTO bestelling_lijnen (bestelling_id, product_id, aantal) VALUES (3, 1, 0);",
+        ], refused
+        receipt = run_cell(fresh, find_cell(fresh, "-- 5.5"))
+        expect(receipt.locator("span.sql-null")).not_to_have_count(0)  # leerling 999 en product 99 bestaan niet
+
+        # Fase 6 — foreign keys: de PRAGMA werkt in een cel, en de verwijzingen worden bewaakt.
+        expect(run_cell(fresh, pragma).locator("td")).to_have_text(["1"])
+        expect(run_cell(fresh, find_cell(fresh, "DROP TABLE bestelling_lijnen;\nDROP TABLE bestellingen;", exact=True))).to_contain_text("OK")
+        expect(run_cell(fresh, find_cell(fresh, "ON DELETE CASCADE"))).to_contain_text("OK")
+        refused = []
+        for needle in ("INSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'betaald', 3);",
+                       "INSERT INTO bestelling_lijnen (bestelling_id, product_id, aantal) VALUES (3, 1, 3);"):
+            refused += failing_lines(run_lines_one_by_one(fresh, find_cell(fresh, needle)))
+        assert refused == [
+            "INSERT INTO bestellingen (datum, status, leerling_id) VALUES ('2026-02-02', 'open', 999);",
+            "INSERT INTO bestelling_lijnen (bestelling_id, product_id, aantal) VALUES (2, 99, 1);",
+            "INSERT INTO bestelling_lijnen (bestelling_id, product_id, aantal) VALUES (99, 1, 1);",
+        ], refused
+        cascade = run_cell(fresh, find_cell(fresh, "-- 6.7.1"))
+        expect(cascade.locator("tbody tr")).to_have_count(2)  # de lijnen van bestelling 1 zijn mee verdwenen
+        expect(run_cell(fresh, find_cell(fresh, "-- 6.7.2"))).to_contain_text("FOREIGN KEY constraint failed")
+        expect(run_cell(fresh, find_cell(fresh, "-- 6.7.3"))).to_contain_text("FOREIGN KEY constraint failed")
+
+        # Fase 7 — testen: geldige data lukt, de regels houden de rest tegen.
+        expect(run_cell(fresh, pragma_again).locator("td")).to_have_text(["1"])
+        for index in range(pragma_again + 1, find_cell(fresh, "-- 7.2")):
+            expect(run_cell(fresh, index)).to_contain_text("OK")
+        receipt = run_cell(fresh, find_cell(fresh, "-- 7.2"))
+        expect(receipt.locator("tbody tr")).to_have_count(3)
+        expect(receipt.locator("span.sql-null")).to_have_count(0)
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.3.1")).locator("td")).to_contain_text(["1", "betaald"])
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.3.2"))).to_contain_text("OK")
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.3.3"))).to_contain_text("CHECK constraint failed")
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.4.1")).locator("tbody tr")).to_have_count(1)
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.4.2"))).to_contain_text("FOREIGN KEY constraint failed")
+        expect(run_cell(fresh, find_cell(fresh, "-- 7.4.3"))).to_contain_text("OK")
+        expect(run_cell(fresh, last)).to_contain_text("FOREIGN KEY constraint failed")  # 7.4.4, de laatste cel
+        wait_db_saved(fresh, True)
+
+        # Indienen: het volledige SQLite-bestand, met schema, foreign keys en de gegevens van fase 7.
+        path = download_database(fresh, tmp_path)
+        assert path.name == "databank-05_de_cafetaria.db"
+        assert tables_in(path) == ["bestelling_lijnen", "bestellingen", "leerlingen", "producten"]
+        assert {t: row_count(path, t) for t in tables_in(path)} == {
+            "leerlingen": 2, "producten": 3, "bestellingen": 1, "bestelling_lijnen": 1,
+        }
+        con = sqlite3.connect(path)
+        try:
+            fks = con.execute("PRAGMA foreign_key_list(bestelling_lijnen)").fetchall()
+            assert sorted((fk[2], fk[6]) for fk in fks) == [("bestellingen", "CASCADE"), ("producten", "RESTRICT")], fks
+        finally:
+            con.close()
     finally:
         context.close()

@@ -8,8 +8,8 @@
 //
 // Werking per pagina:
 //   - een cel met tag `sql-db` bevat het pad naar de seed-database; ontbreekt
-//     die cel, dan start de pagina met een lege databank (CREATE TABLE-lessen
-//     die van nul beginnen) — verder werkt alles hetzelfde;
+//     die cel, dan start de pagina met een lege databank (de bouwlessen van
+//     het ERD-deel, hoofdstuk 4-5, #42) — verder werkt alles hetzelfde;
 //   - elke cel met tag `sql-live` wordt een editor (expliciete tag — er is
 //     bewust géén fallback meer die alle ```sql-blokken omzet);
 //   - alle editors delen één sql.js-database in een worker, met een watchdog

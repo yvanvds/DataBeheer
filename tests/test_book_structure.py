@@ -1,5 +1,6 @@
 """Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36),
-de plaats van de DB Browser-installatie (issue #33) en de verankering van de
+de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
+het ERD-deel op de site-editor (issue #42) en de verankering van de
 onderzoekscompetenties in het Big Data-deel (issue #37) en de les kritisch werken
 met AI die daarnaast staat (issue #38).
 
@@ -79,10 +80,38 @@ INSTALL_PHRASES = [
     r"\.sqlite\b",
 ]
 
-# De enige downloadlink voor DB Browser for SQLite. Hij staat op de eerste
-# pagina van het ERD-deel en nergens eerder in leesvolgorde.
+# De enige downloadlink voor DB Browser for SQLite. Sinds issue #42 is het
+# programma optioneel: de bouwlessen draaien op de site-editor, en de link
+# staat alleen nog in het laatste ERD-hoofdstuk (bestand versus server), in
+# een kader dat het als optioneel aankondigt — nergens eerder in leesvolgorde.
 DB_BROWSER_DOWNLOAD = r"https://sqlitebrowser\.org/dl/"
 DB_BROWSER_NAME = r"DB Browser for SQLite"
+# Werkwijze van DB Browser (en installatiestappen) die geen enkele pagina
+# vóór dat kader mag veronderstellen.
+DB_BROWSER_WORKFLOW = [
+    DB_BROWSER_DOWNLOAD,
+    r"New Database",
+    r"Open Database",
+    r"Execute SQL",
+    r"Write Changes",
+    r"\binstalleer\b",
+    r"\binstallatie",
+    r"\bgeïnstalleerd",
+]
+
+# Bouwlessen (issue #42): ERD hoofdstuk 4 en 5 bouwen een databank van nul op
+# de site-editor. Zo'n pagina heeft geen sql-db-cel (lege startdatabank), wel
+# sql-live-cellen, en indienen gaat via "Download mijn databank", dat het
+# bestand databank-<pagina>.db oplevert (naamgeving in sql-editors.js).
+BUILD_LESSONS = {
+    "chapters/ERD/04_de_voetbal": "databank-04_de_voetbal.db",
+    "chapters/ERD/05_de_cafetaria": "databank-05_de_cafetaria.db",
+}
+DOWNLOAD_DB_BUTTON = "Download mijn databank"
+# PRAGMA foreign_keys staat in sql.js standaard uit en overleeft geen herlaad
+# van de pagina: de cafetaria-les voert de regel in een eigen cel uit en zegt
+# dat je ze na het heropenen van de pagina opnieuw uitvoert.
+FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON;"
 
 # Onderzoekscompetenties (issue #37): één pagina in het Big Data-deel definieert
 # zes competenties (C1..C6) met een rubric en een opbouwtabel; elk hoofdstuk
@@ -204,6 +233,16 @@ def intro_part_items() -> list[str]:
 def markdown_of(notebook: Path) -> str:
     cells = json.loads(notebook.read_text(encoding="utf-8"))["cells"]
     return "\n".join("".join(c["source"]) for c in cells if c["cell_type"] == "markdown")
+
+
+def code_cells_tagged(rel: str, tag: str) -> list[str]:
+    """Brontekst van de codecellen van een notebook met de gegeven tag (sql-db, sql-live)."""
+    cells = json.loads((BOOK / f"{rel}.ipynb").read_text(encoding="utf-8"))["cells"]
+    return [
+        "".join(c["source"])
+        for c in cells
+        if c["cell_type"] == "code" and tag in c.get("metadata", {}).get("tags", [])
+    ]
 
 
 def chapter_notebooks(part_dir: str) -> list[Path]:
@@ -350,22 +389,82 @@ def test_intro_promises_no_installation_for_sql_part() -> None:
     assert not hits, "intro.md, deel 1: " + "\n".join(hits)
 
 
-def test_first_erd_page_installs_db_browser_with_motivation() -> None:
-    text = source_of(FIRST_ERD)
-    assert re.search(DB_BROWSER_DOWNLOAD, text), f"{FIRST_ERD}: geen downloadlink naar DB Browser"
-    assert re.search(DB_BROWSER_NAME, text), f"{FIRST_ERD}: DB Browser for SQLite wordt niet benoemd"
-    # De motivatie: hier wordt je databank een bestand dat je bewaart en indient.
-    assert re.search(r"\bbestand\b", text, flags=re.IGNORECASE), f"{FIRST_ERD}: geen motivatie (bestand)"
+def test_db_browser_is_optional_and_only_offered_on_last_erd_page() -> None:
+    """Sinds #42 is DB Browser optioneel: het enige installatiekader staat in
+    het laatste ERD-hoofdstuk, waar het bestand-versus-server-inzicht zit, en
+    laat de leerling het bestand van "Download mijn databank" openen."""
+    text = source_of(LAST_ERD)
+    m = re.search(r"^:::\{admonition\} (Optioneel:[^\n]*)\n(.*?)^:::$", text, flags=re.MULTILINE | re.DOTALL)
+    assert m, f"{LAST_ERD}: geen kader met een titel 'Optioneel: …' voor DB Browser"
+    box = m.group(2)
+    assert re.search(DB_BROWSER_DOWNLOAD, box), f"{LAST_ERD}: het kader bevat geen downloadlink naar DB Browser"
+    assert re.search(DB_BROWSER_NAME, box), f"{LAST_ERD}: het kader benoemt DB Browser for SQLite niet"
+    # De motivatie: het gedownloade .db-bestand is een volledige databank, ook buiten de site.
+    assert re.search(r"\bbestand\b", box, flags=re.IGNORECASE), f"{LAST_ERD}: geen motivatie (bestand)"
+    assert BUILD_LESSONS["chapters/ERD/05_de_cafetaria"] in box, f"{LAST_ERD}: het kader opent niet de download uit hoofdstuk 5"
+    assert re.search(r"zonder installatie", box), f"{LAST_ERD}: het kader zegt niet dat de cursus zonder installatie werkt"
+    assert len(re.findall(DB_BROWSER_DOWNLOAD, text)) == 1, f"{LAST_ERD}: de downloadlink staat er meer dan één keer"
+    # En nergens anders in het boek, ook niet in de intro.
+    problems = []
+    for rel in ["intro", *(page for i in range(len(load_toc()["parts"])) for page in toc_pages(i))]:
+        if rel != LAST_ERD and re.search(DB_BROWSER_DOWNLOAD, source_of(rel)):
+            problems.append(f"{rel}: bevat de downloadlink van DB Browser")
+    assert not problems, "\n".join(problems)
 
 
 def test_no_db_browser_before_first_erd_page() -> None:
     problems = []
     for rel in pages_before(FIRST_ERD):
-        text = source_of(rel)
-        if rel == "intro":
-            text = intro_part_items()[0]  # deel 3 mag DB Browser wel aankondigen
-        problems += [f"{rel}: {hit}" for hit in find_phrases(text, [DB_BROWSER_DOWNLOAD, r"DB ?Browser"])]
+        problems += [f"{rel}: {hit}" for hit in find_phrases(source_of(rel), [DB_BROWSER_DOWNLOAD, r"DB ?Browser"])]
     assert not problems, "\n".join(problems)
+
+
+def test_erd_part_needs_no_installation_before_the_optional_box() -> None:
+    """Een leerling doorloopt het hele ERD-deel zonder iets te installeren:
+    geen installatiestappen en geen DB Browser-werkwijze vóór het optionele
+    kader in het laatste hoofdstuk (en de intro belooft DB Browser niet meer)."""
+    erd_pages = toc_pages(EXPECTED_PARTS.index("Databases Ontwerpen met ERD's"))
+    assert erd_pages[-1] == LAST_ERD
+    problems = []
+    for rel in ["intro", *erd_pages[:-1]]:
+        problems += [f"{rel}: {hit}" for hit in find_phrases(source_of(rel), DB_BROWSER_WORKFLOW)]
+    problems += [f"intro: {hit}" for hit in find_phrases(source_of("intro"), [r"DB ?Browser"])]
+    assert not problems, "\n".join(problems)
+
+
+def test_build_lessons_run_on_the_site_editor() -> None:
+    """ERD hoofdstuk 4 en 5 (#42): sql-live-cellen op een pagina zonder
+    sql-db-cel, en indienen via "Download mijn databank" onder de juiste bestandsnaam."""
+    problems = []
+    for rel, db_file in BUILD_LESSONS.items():
+        if code_cells_tagged(rel, "sql-db"):
+            problems.append(f"{rel}: heeft een sql-db-cel; een bouwles start met een lege databank")
+        live = code_cells_tagged(rel, "sql-live")
+        if len(live) < 3:
+            problems.append(f"{rel}: {len(live)} sql-live-cellen; de bouwstappen horen in interactieve cellen")
+        if not any(re.search(r"^\s*CREATE TABLE\b", sql, flags=re.MULTILINE | re.IGNORECASE) for sql in live):
+            problems.append(f"{rel}: geen sql-live-cel met CREATE TABLE")
+        text = source_of(rel)
+        if f"**{DOWNLOAD_DB_BUTTON}**" not in text:
+            problems.append(f"{rel}: noemt de knop {DOWNLOAD_DB_BUTTON} niet")
+        if f"`{db_file}`" not in text:
+            problems.append(f"{rel}: noemt het in te dienen bestand {db_file} niet")
+        if not re.search(r"\blege databank\b", text):
+            problems.append(f"{rel}: zegt niet dat de pagina met een lege databank start")
+    assert not problems, "\n".join(problems)
+
+
+def test_cafetaria_lesson_switches_foreign_keys_on_in_a_runnable_cell() -> None:
+    rel = "chapters/ERD/05_de_cafetaria"
+    pragma_cells = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_ON in sql]
+    assert len(pragma_cells) >= 2, f"{rel}: {FOREIGN_KEYS_ON} hoort in een eigen cel bij fase 6 én als herinnering bij fase 7"
+    text = source_of(rel)
+    assert re.search(
+        r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;`|`PRAGMA foreign_keys = ON;`.{0,160}\bopnieuw\b",
+        text,
+        flags=re.DOTALL,
+    ), f"{rel}: legt niet uit dat je {FOREIGN_KEYS_ON} na het heropenen van de pagina opnieuw uitvoert"
+    assert "Reset db" in text, f"{rel}: noemt Reset db niet (zet de instelling ook uit)"
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
@@ -574,14 +673,35 @@ def test_html_sql_part_needs_no_installation() -> None:
     assert not problems, "\n".join(problems)
 
 
-def test_html_db_browser_download_first_appears_on_first_erd_page() -> None:
-    assert re.search(rf'href="{DB_BROWSER_DOWNLOAD}"', page_html(FIRST_ERD)), (
-        f"{FIRST_ERD}: geen downloadlink naar DB Browser in de gebouwde pagina"
+def test_html_db_browser_download_only_appears_on_last_erd_page() -> None:
+    article = article_html(LAST_ERD)
+    assert re.search(rf'href="{DB_BROWSER_DOWNLOAD}"', article), (
+        f"{LAST_ERD}: geen downloadlink naar DB Browser in de gebouwde pagina"
+    )
+    assert re.search(r'<p class="admonition-title">Optioneel:[^<]*</p>', article), (
+        f"{LAST_ERD}: het kader 'Optioneel: …' is niet gerenderd"
     )
     problems = []
-    for rel in pages_before(FIRST_ERD):
+    for rel in pages_before(LAST_ERD):
         if re.search(DB_BROWSER_DOWNLOAD, page_html(rel)):
-            problems.append(f"{rel}: bevat de downloadlink van DB Browser vóór het ERD-deel")
+            problems.append(f"{rel}: bevat de downloadlink van DB Browser vóór het optionele kader")
+    assert not problems, "\n".join(problems)
+
+
+def test_html_build_lessons_have_live_cells_and_no_seed() -> None:
+    problems = []
+    for rel, db_file in BUILD_LESSONS.items():
+        text = page_html(rel)
+        live = len(re.findall(r'class="cell tag_sql-live', text))
+        if live < 3:
+            problems.append(f"{rel}: {live} sql-live-cellen in de gebouwde pagina")
+        if re.search(r'class="cell tag_sql-db', text):
+            problems.append(f"{rel}: gebouwde pagina heeft een sql-db-cel (seed)")
+        visible = visible_text(rel)
+        for phrase in (DOWNLOAD_DB_BUTTON, db_file, "lege databank"):
+            if phrase not in visible:
+                problems.append(f"{rel}: niet zichtbaar: {phrase!r}")
+        problems += [f"{rel}: {hit}" for hit in find_phrases(visible, DB_BROWSER_WORKFLOW)]
     assert not problems, "\n".join(problems)
 
 
