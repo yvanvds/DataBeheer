@@ -16,7 +16,9 @@
 //     Run ververst (CREATE TABLE-lessen);
 //   - leerlingqueries worden per cel bewaard in localStorage (#14): bij het
 //     heropenen van de pagina staat het eigen werk er weer, en de knop
-//     "Startcode" zet de originele opgave terug.
+//     "Startcode" zet de originele opgave terug;
+//   - onder de laatste cel staat een knop "Download mijn queries" (#30) die
+//     alle celinhoud van de pagina als één .sql-bestand exporteert.
 
 import {
   EditorState, Compartment,
@@ -367,6 +369,51 @@ async function openSchema() {
   mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
 }
 
+// --- Download van het eigen werk (#30) ---
+// Eén knop per pagina die de actuele inhoud van alle interactieve cellen als
+// één .sql-bestand exporteert, met een commentaarkop per cel ("-- cel 3").
+// Handig indienformaat, en de aangeraden uitweg voor wie op meerdere
+// toestellen werkt: de opslag uit #14 is per browser/toestel. De export leest
+// rechtstreeks uit de editors (niet uit localStorage), dus hij werkt ook als
+// opslag geblokkeerd is.
+function exportFileName() {
+  const page = (location.pathname.split('/').pop() || '')
+    .replace(/\.html?$/i, '')
+    .replace(/[^\w.-]+/g, '_');
+  return `queries-${page || 'pagina'}.sql`;
+}
+
+function buildSqlExport() {
+  const parts = editorsApi.map(
+    ed => `-- cel ${ed.index + 1}\n${ed.getValue().trim()}\n`,
+  );
+  return `-- Mijn queries — ${location.pathname}\n\n${parts.join('\n')}`;
+}
+
+function downloadQueries() {
+  const blob = new Blob([buildSqlExport()], { type: 'application/sql' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = exportFileName();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function addDownloadBar(lastCell) {
+  const bar = document.createElement('div');
+  bar.className = 'sql-download-bar';
+  bar.innerHTML = `
+    <span class="title">Mijn werk</span>
+    <span class="sql-live-note">Je werk wordt per browser bewaard — als bestand neem je het mee naar een ander toestel, of dien je het in.</span>
+    <button class="sql-live-btn download">Download mijn queries</button>
+  `;
+  bar.querySelector('.download').addEventListener('click', downloadQueries);
+  lastCell.after(bar);
+}
+
 // --- Editors opzetten ---
 function editorExtensions(langCompartment, run, onDocChange) {
   return [
@@ -467,6 +514,9 @@ function initEditors(blocks) {
       onChange: (cb) => { changeListeners.push(cb); },
     });
   });
+
+  // Downloadknop (#30) onder de laatste interactieve cel van de pagina.
+  addDownloadBar(blocks[blocks.length - 1].cell);
 
   // Nog niet weggeschreven wijzigingen (debounce) alsnog bewaren bij het
   // verlaten of verbergen van de pagina.
