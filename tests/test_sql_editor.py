@@ -5,7 +5,8 @@ pagina als .sql-bestand en zetten het terug (issues #30/#35). De databank van
 een pagina blijft in de browser bewaard (IndexedDB) en is met "Download mijn
 databank" als .db-bestand te downloaden (issue #41). Daarop draaien de
 bouwlessen van het ERD-deel (hoofdstuk 4 en 5, pagina's zonder seed) volledig
-op de site (issue #42).
+op de site (issue #42). De controlecel voor PRAGMA foreign_keys in ERD
+hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue #43).
 
 Twee lagen:
 
@@ -918,5 +919,48 @@ def test_cafetaria_lesson_runs_end_to_end_on_the_site_editor(page, site_url, tmp
             assert sorted((fk[2], fk[6]) for fk in fks) == [("bestellingen", "CASCADE"), ("producten", "RESTRICT")], fks
         finally:
             con.close()
+    finally:
+        context.close()
+
+
+# --- e2e: de foreign_keys-controle in ERD hoofdstuk 1 (#43) -----------------
+
+# Hoofdstuk 1 bevraagt webshop.db (pagina mét seed). De cel bij §5 controleert
+# PRAGMA foreign_keys, zet de instelling aan zoals hoofdstuk 5 (6.2) en
+# controleert opnieuw. Ze bevatte `#`-commentaar, dat SQLite niet kent: met
+# "Run alles" (en met Run zodra de cursor op zo'n regel stond) gaf sql.js een
+# syntaxfout.
+ERD_INTRO_PAGE = "chapters/ERD/01_Inleiding_tot_ERD.html"
+FOREIGN_KEYS_CHECK = "PRAGMA foreign_keys;"
+FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON;"
+
+
+def run_at_line(page, index: int, needle) -> None:
+    """Klik (zoals een leerling) in de regel van cel `index` die `needle` bevat en druk op Ctrl+Enter."""
+    cell_at(page, index).locator(".cm-line", has_text=needle).click()
+    page.keyboard.press("Control+Enter")
+
+
+def test_erd_intro_foreign_keys_cell_runs_without_syntax_error(page, site_url) -> None:
+    """Op een vers geopende pagina staat de instelling uit: "Run alles" laat
+    0, dan 1 zien, zonder fout. Daarna regel per regel met Run — ook met de
+    cursor op een commentaarregel, die bij het statement erna hoort."""
+    context, fresh = open_fresh(page, site_url, ERD_INTRO_PAGE)
+    try:
+        index = find_cell(fresh, FOREIGN_KEYS_CHECK)
+        assert FOREIGN_KEYS_ON in initial_values(fresh)[index]
+        out = run_cell(fresh, index)
+        expect(out).not_to_contain_text("Fout:")
+        expect(out.locator("th")).to_have_text(["foreign_keys", "foreign_keys"])
+        expect(out.locator("td")).to_have_text(["0", "1"])  # uit → aan
+
+        run_at_line(fresh, index, re.compile(r"^PRAGMA foreign_keys;$"))  # de eerste controle, nu al aan
+        expect(out.locator("td")).to_have_text(["1"])
+        run_at_line(fresh, index, "Zet ze aan")  # commentaarregel: Run voert het statement erna uit
+        expect(out).to_contain_text("OK")
+        expect(out.locator("th")).to_have_count(0)
+        run_at_line(fresh, index, "controle: 1 betekent aan")
+        expect(out.locator("td")).to_have_text(["1"])
+        expect(out).not_to_contain_text("Fout:")
     finally:
         context.close()
