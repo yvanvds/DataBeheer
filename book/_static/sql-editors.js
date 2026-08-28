@@ -18,17 +18,21 @@
 //     heropenen van de pagina staat het eigen werk er weer, en de knop
 //     "Startcode" zet de originele opgave terug;
 //   - onder de laatste cel staat een knop "Download mijn queries" (#30) die
-//     alle celinhoud van de pagina als één .sql-bestand exporteert.
+//     alle celinhoud van de pagina als één .sql-bestand exporteert;
+//   - Run voert de selectie uit, of anders het statement onder de cursor
+//     (subtiel gemarkeerd); "Run alles" (Mod-Shift-Enter) voert de hele cel
+//     uit (#34, statementgrenzen in sql-statements.js).
 
 import {
-  EditorState, Compartment,
-  EditorView, keymap, lineNumbers, drawSelection,
+  EditorState, Compartment, StateField,
+  EditorView, Decoration, keymap, lineNumbers, drawSelection,
   highlightActiveLine, highlightActiveLineGutter,
   defaultKeymap, history, historyKeymap, indentWithTab,
   indentOnInput, bracketMatching, syntaxHighlighting, HighlightStyle,
   autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
   sql, SQLite, tags,
 } from './codemirror/codemirror.js';
+import { splitStatements, statementAt } from './sql-statements.js';
 
 // --- Config ---
 const STATIC_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
@@ -152,11 +156,12 @@ function wrapCell(cell) {
     <div class="sql-live-toolbar">
       <span class="title">Interactieve SQL</span>
       <span class="sql-live-own" hidden title="Deze cel toont jouw bewaarde versie, niet de originele startcode">eigen versie</span>
-      <button class="sql-live-btn run">Run</button>
+      <button class="sql-live-btn run" title="Voert je selectie uit, of anders het statement waar de cursor staat (Ctrl/Cmd+Enter)">Run</button>
+      <button class="sql-live-btn runall" title="Voert alle statements in deze cel uit (Ctrl/Cmd+Shift+Enter)">Run alles</button>
       <button class="sql-live-btn startcode" title="Zet de originele startcode van deze cel terug">Startcode</button>
       <button class="sql-live-btn reset" title="Zet de databank terug naar de startgegevens (je query blijft staan)">Reset db</button>
       <button class="sql-live-btn schema">Schema</button>
-      <span class="sql-live-note">Ctrl/Cmd+Enter om uit te voeren</span>
+      <span class="sql-live-note">Ctrl/Cmd+Enter: statement bij de cursor · +Shift: alles</span>
     </div>
     <div class="sql-live-editor"></div>
     <div class="sql-live-output">${OUTPUT_PLACEHOLDER}</div>
@@ -167,6 +172,7 @@ function wrapCell(cell) {
     outputEl: wrap.querySelector('.sql-live-output'),
     ownEl: wrap.querySelector('.sql-live-own'),
     runBtn: wrap.querySelector('.run'),
+    runAllBtn: wrap.querySelector('.runall'),
     startBtn: wrap.querySelector('.startcode'),
     resetBtn: wrap.querySelector('.reset'),
     schemaBtn: wrap.querySelector('.schema'),
@@ -337,8 +343,53 @@ function onWorkerMessage(ev) {
   }
 }
 
+// --- Run-doel: selectie, anders het statement onder de cursor (#34) ---
+// Zoals in echte SQL-tools: Run voert de selectie uit als die er is, anders
+// het statement waarin de cursor staat (grenzen: sql-statements.js). "Run
+// alles" voert de hele cel uit — DDL-scripts (CREATE TABLE …; INSERT …;)
+// hebben dat nodig. Het statement dat Run zou uitvoeren krijgt een subtiele
+// markering per regel (.sql-run-line, gestyled in sql-editors.css), maar
+// alleen als de cel meer dan één statement bevat: bij één statement loopt
+// sowieso alles en is de markering ruis. Bij een selectie is de selectie
+// zelf de markering.
+const runLine = Decoration.line({ class: 'sql-run-line' });
+
+function runTargetState(state, statements) {
+  const sel = state.selection.main;
+  const target = sel.empty ? statementAt(statements, sel.head) : null;
+  const marks = [];
+  if (target && statements.length > 1) {
+    const last = state.doc.lineAt(target.to).number;
+    for (let line = state.doc.lineAt(target.from); ; line = state.doc.line(line.number + 1)) {
+      marks.push(runLine.range(line.from));
+      if (line.number >= last) break;
+    }
+  }
+  return { statements, target, decorations: Decoration.set(marks) };
+}
+
+// Statementgrenzen en markering volgen elke wijziging van tekst of cursor.
+const runTargetField = StateField.define({
+  create: state => runTargetState(state, splitStatements(state.doc.toString())),
+  update(value, tr) {
+    if (!tr.docChanged && !tr.selection) return value;
+    const statements = tr.docChanged ? splitStatements(tr.state.doc.toString()) : value.statements;
+    return runTargetState(tr.state, statements);
+  },
+  provide: f => EditorView.decorations.from(f, v => v.decorations),
+});
+
+// De SQL die Run uitvoert: de selectie, anders het statement onder de cursor;
+// bevat de cel geen statement (leeg, alleen commentaar), dan de hele cel.
+function runTargetSql(state) {
+  const sel = state.selection.main;
+  if (!sel.empty) return state.sliceDoc(sel.from, sel.to);
+  const { target } = state.field(runTargetField);
+  return target ? state.sliceDoc(target.from, target.to) : state.doc.toString();
+}
+
 // --- Acties per cel ---
-function runQuery(rec) {
+function runQuery(rec, sqlText) {
   if (!worker || !dbReady) {
     rec.outputEl.innerHTML =
       '<div class="sql-live-note">De database wordt nog geladen — probeer zo meteen opnieuw.</div>';
@@ -349,7 +400,7 @@ function runQuery(rec) {
   worker.postMessage({
     id: SHARED_ID,
     type: 'exec',
-    payload: { sql: rec.view.state.doc.toString(), limit: RUN_LIMIT, client: rec.client },
+    payload: { sql: sqlText, limit: RUN_LIMIT, client: rec.client },
   });
 }
 
@@ -415,7 +466,7 @@ function addDownloadBar(lastCell) {
 }
 
 // --- Editors opzetten ---
-function editorExtensions(langCompartment, run, onDocChange) {
+function editorExtensions(langCompartment, run, runAll, onDocChange) {
   return [
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -426,10 +477,12 @@ function editorExtensions(langCompartment, run, onDocChange) {
     closeBrackets(),
     autocompletion(),
     highlightActiveLine(),
+    runTargetField,
     plinkTheme,
     syntaxHighlighting(plinkHighlight),
     keymap.of([
       { key: 'Mod-Enter', run: () => { run(); return true; } },
+      { key: 'Mod-Shift-Enter', run: () => { runAll(); return true; } },
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
@@ -469,7 +522,9 @@ function initEditors(blocks) {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(syncStorage, SAVE_DEBOUNCE_MS);
     };
-    const run = () => { syncStorage(); runQuery(rec); };
+    // Opslag eerst wegschrijven (#14), ook bij een gedeeltelijke Run (#34).
+    const run = () => { syncStorage(); runQuery(rec, runTargetSql(view.state)); };
+    const runAll = () => { syncStorage(); runQuery(rec, view.state.doc.toString()); };
 
     const view = new EditorView({
       state: EditorState.create({
@@ -477,6 +532,7 @@ function initEditors(blocks) {
         extensions: editorExtensions(
           langCompartment,
           run,
+          runAll,
           () => {
             scheduleSync();
             const value = view.state.doc.toString();
@@ -492,6 +548,7 @@ function initEditors(blocks) {
     ui.ownEl.hidden = doc === initialDoc;
 
     ui.runBtn.addEventListener('click', run);
+    ui.runAllBtn.addEventListener('click', runAll);
     ui.startBtn.addEventListener('click', () => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: initialDoc },
@@ -540,7 +597,11 @@ onReady(async () => {
     }
 
     initEditors(blocks);
-    window.sqlLive = { editors: editorsApi, staticBase: STATIC_BASE };
+    window.sqlLive = {
+      editors: editorsApi,
+      staticBase: STATIC_BASE,
+      get dbReady() { return dbReady; }, // o.a. voor de e2e-tests (tests/test_sql_editor.py)
+    };
     document.dispatchEvent(new CustomEvent('sql-live:ready', { detail: window.sqlLive }));
 
     await startWorker();

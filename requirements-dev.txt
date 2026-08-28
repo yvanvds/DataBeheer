@@ -1,0 +1,10 @@
+# Ontwikkel- en testafhankelijkheden. Niet nodig om het boek te bouwen of te
+# publiceren (daarvoor gebruikt de deploy-workflow requirements.txt).
+#
+#     pip install -r requirements-dev.txt
+#     playwright install chromium        # eenmalig, voor de e2e-tests van de SQL-editor
+#     teachbooks build book
+#     pytest tests
+-r requirements.txt
+pytest
+playwright
