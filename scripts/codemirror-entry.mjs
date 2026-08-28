@@ -5,9 +5,10 @@
 // We exporteren alleen wat book/_static/sql-editors.js echt gebruikt; zo
 // blijft de bundel klein (belangrijk voor de trage leerling-laptops).
 
-export { EditorState, Compartment } from "@codemirror/state";
+export { EditorState, Compartment, StateField } from "@codemirror/state";
 export {
   EditorView,
+  Decoration,
   keymap,
   lineNumbers,
   drawSelection,

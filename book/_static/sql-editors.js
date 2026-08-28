@@ -7,28 +7,45 @@
 // scripts/codemirror-entry.mjs, bouwen met `npm run build:editor`).
 //
 // Werking per pagina:
-//   - een cel met tag `sql-db` bevat het pad naar de seed-database;
+//   - een cel met tag `sql-db` bevat het pad naar de seed-database; ontbreekt
+//     die cel, dan start de pagina met een lege databank (de bouwlessen van
+//     het ERD-deel, hoofdstuk 4-5, #42) — verder werkt alles hetzelfde;
 //   - elke cel met tag `sql-live` wordt een editor (expliciete tag — er is
 //     bewust géén fallback meer die alle ```sql-blokken omzet);
 //   - alle editors delen één sql.js-database in een worker, met een watchdog
-//     die runaway queries stopt en de database opnieuw seedt;
+//     die runaway queries stopt en de database opnieuw laadt;
 //   - schema-aware autocomplete via @codemirror/lang-sql, na elke geslaagde
 //     Run ververst (CREATE TABLE-lessen);
 //   - leerlingqueries worden per cel bewaard in localStorage (#14): bij het
 //     heropenen van de pagina staat het eigen werk er weer, en de knop
 //     "Startcode" zet de originele opgave terug;
-//   - onder de laatste cel staat een knop "Download mijn queries" (#30) die
-//     alle celinhoud van de pagina als één .sql-bestand exporteert.
+//   - de databank zelf wordt per pagina bewaard in IndexedDB (#41): na elke
+//     Run die de databank wijzigt, stuurt de worker een snapshot
+//     (db.export()) die hier wordt weggeschreven; bij het heropenen van de
+//     pagina wordt die kopie geopend in plaats van de seed, en "Reset db" gaat
+//     terug naar de seed (opslag in sql-db-store.js);
+//   - onder de laatste cel staat de balk "Mijn werk": "Download mijn queries"
+//     (#30) exporteert alle celinhoud van de pagina als één .sql-bestand,
+//     "Upload mijn queries" (#35) zet zo'n bestand weer terug (bestandsformaat
+//     in sql-queries-file.js) en "Download mijn databank" (#41) biedt de
+//     databank aan als .db-bestand (SQLite-bestand, te openen in elk
+//     SQLite-programma en in te dienen via Teams);
+//   - Run voert de selectie uit, of anders het statement onder de cursor
+//     (subtiel gemarkeerd); "Run alles" (Mod-Shift-Enter) voert de hele cel
+//     uit (#34, statementgrenzen in sql-statements.js).
 
 import {
-  EditorState, Compartment,
-  EditorView, keymap, lineNumbers, drawSelection,
+  EditorState, Compartment, StateField,
+  EditorView, Decoration, keymap, lineNumbers, drawSelection,
   highlightActiveLine, highlightActiveLineGutter,
   defaultKeymap, history, historyKeymap, indentWithTab,
   indentOnInput, bracketMatching, syntaxHighlighting, HighlightStyle,
   autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
   sql, SQLite, tags,
 } from './codemirror/codemirror.js';
+import { splitStatements, statementAt } from './sql-statements.js';
+import { buildQueriesFile, parseQueriesFile, pageName } from './sql-queries-file.js';
+import { readSavedDb, writeSavedDb, deleteSavedDb } from './sql-db-store.js';
 
 // --- Config ---
 const STATIC_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
@@ -46,6 +63,18 @@ let worker = null;
 let seedBuf = null;           // ArrayBuffer van de seed-database (voor reset/reseed)
 let dbReady = false;
 let signalReady = null;
+
+// Bewaarde databank (#41). savedBuf is de laatste snapshot van de worker
+// (Uint8Array): het herstelpunt na een herlaad (uit IndexedDB) én na een
+// watchdog-herstart (in het geheugen, ook als IndexedDB niet kan). dbSaved
+// zegt of die snapshot ook echt in IndexedDB staat. storeGen maakt een
+// snapshot die nog onderweg is ongeldig zodra "Reset db" wordt geklikt.
+let savedBuf = null;
+let dbSaved = false;
+let storeGen = 0;
+let storageWarned = false;
+const ownDbBadges = [];       // "eigen databank"-label per celtoolbar
+let reportWork = () => {};    // statusregel in de balk "Mijn werk"
 
 // --- Utils ---
 function resolveStatic(url) {
@@ -152,11 +181,13 @@ function wrapCell(cell) {
     <div class="sql-live-toolbar">
       <span class="title">Interactieve SQL</span>
       <span class="sql-live-own" hidden title="Deze cel toont jouw bewaarde versie, niet de originele startcode">eigen versie</span>
-      <button class="sql-live-btn run">Run</button>
+      <span class="sql-live-own-db" hidden title="De databank bevat jouw wijzigingen (van nu of van een vorig bezoek) en blijft in deze browser bewaard. Reset db zet de startgegevens terug">eigen databank</span>
+      <button class="sql-live-btn run" title="Voert je selectie uit, of anders het statement waar de cursor staat (Ctrl/Cmd+Enter)">Run</button>
+      <button class="sql-live-btn runall" title="Voert alle statements in deze cel uit (Ctrl/Cmd+Shift+Enter)">Run alles</button>
       <button class="sql-live-btn startcode" title="Zet de originele startcode van deze cel terug">Startcode</button>
       <button class="sql-live-btn reset" title="Zet de databank terug naar de startgegevens (je query blijft staan)">Reset db</button>
       <button class="sql-live-btn schema">Schema</button>
-      <span class="sql-live-note">Ctrl/Cmd+Enter om uit te voeren</span>
+      <span class="sql-live-note">Ctrl/Cmd+Enter: statement bij de cursor · +Shift: alles</span>
     </div>
     <div class="sql-live-editor"></div>
     <div class="sql-live-output">${OUTPUT_PLACEHOLDER}</div>
@@ -166,7 +197,9 @@ function wrapCell(cell) {
     editorEl: wrap.querySelector('.sql-live-editor'),
     outputEl: wrap.querySelector('.sql-live-output'),
     ownEl: wrap.querySelector('.sql-live-own'),
+    ownDbEl: wrap.querySelector('.sql-live-own-db'),
     runBtn: wrap.querySelector('.run'),
+    runAllBtn: wrap.querySelector('.runall'),
     startBtn: wrap.querySelector('.startcode'),
     resetBtn: wrap.querySelector('.reset'),
     schemaBtn: wrap.querySelector('.schema'),
@@ -247,15 +280,22 @@ function refreshCatalog() {
 }
 
 // --- Worker + watchdog ---
+// Wat de worker moet openen: de seed (als de pagina er een heeft) en, tenzij
+// we bewust naar de seed terug willen, de bewaarde databank. Kopieën, want
+// de originelen blijven hier als herstelpunt.
+function dbPayload({ withSaved }) {
+  const payload = {};
+  if (seedBuf) payload.seedBuf = seedBuf.slice(0);
+  if (withSaved && savedBuf) payload.savedBuf = savedBuf.slice(0);
+  return payload;
+}
+
+// Belooft `restored`: true als de worker de bewaarde databank opende.
 function startWorker() {
   worker = new Worker(`${STATIC_BASE}/sql-worker.js`);
   worker.onmessage = onWorkerMessage;
   const ready = new Promise(resolve => { signalReady = resolve; });
-  worker.postMessage({
-    id: SHARED_ID,
-    type: 'init',
-    payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {},
-  });
+  worker.postMessage({ id: SHARED_ID, type: 'init', payload: dbPayload({ withSaved: true }) });
   return ready;
 }
 
@@ -290,11 +330,12 @@ async function onRunTimeout() {
       '<div class="sql-live-error">De query duurde te lang en werd gestopt. De database wordt opnieuw geladen…</div>';
   });
   try {
-    await startWorker();
+    const restored = await startWorker(); // laatste snapshot (#41), anders de seed
+    const state = restored ? 'de gegevens van je laatste geslaagde Run' : 'de startgegevens';
     waiting.forEach(el => {
       el.innerHTML =
         '<div class="sql-live-error">De query duurde te lang en werd gestopt. ' +
-        'De database is opnieuw geladen met de startgegevens — controleer je query ' +
+        `De database is opnieuw geladen met ${state} — controleer je query ` +
         '(bv. de JOIN-voorwaarden) en probeer opnieuw.</div>';
     });
   } catch (e) {
@@ -308,8 +349,18 @@ function onWorkerMessage(ev) {
 
   if (type === 'ready') {
     dbReady = true;
-    if (signalReady) { signalReady(); signalReady = null; }
+    const restored = !!payload?.restored;
+    if (payload?.savedRejected) discardSavedDb(); // onbruikbare kopie: terug naar de seed
+    if (restored) setOwnDb(true);
+    if (signalReady) { signalReady(restored); signalReady = null; }
     refreshCatalog();
+    return;
+  }
+
+  if (type === 'snapshot') {
+    // Zolang een reset onderweg is (dbReady false) hoort een snapshot nog bij
+    // de databank van vóór de reset: negeren, de reset wint.
+    if (dbReady) persistSnapshot(payload?.bytes);
     return;
   }
 
@@ -337,8 +388,53 @@ function onWorkerMessage(ev) {
   }
 }
 
+// --- Run-doel: selectie, anders het statement onder de cursor (#34) ---
+// Zoals in echte SQL-tools: Run voert de selectie uit als die er is, anders
+// het statement waarin de cursor staat (grenzen: sql-statements.js). "Run
+// alles" voert de hele cel uit — DDL-scripts (CREATE TABLE …; INSERT …;)
+// hebben dat nodig. Het statement dat Run zou uitvoeren krijgt een subtiele
+// markering per regel (.sql-run-line, gestyled in sql-editors.css), maar
+// alleen als de cel meer dan één statement bevat: bij één statement loopt
+// sowieso alles en is de markering ruis. Bij een selectie is de selectie
+// zelf de markering.
+const runLine = Decoration.line({ class: 'sql-run-line' });
+
+function runTargetState(state, statements) {
+  const sel = state.selection.main;
+  const target = sel.empty ? statementAt(statements, sel.head) : null;
+  const marks = [];
+  if (target && statements.length > 1) {
+    const last = state.doc.lineAt(target.to).number;
+    for (let line = state.doc.lineAt(target.from); ; line = state.doc.line(line.number + 1)) {
+      marks.push(runLine.range(line.from));
+      if (line.number >= last) break;
+    }
+  }
+  return { statements, target, decorations: Decoration.set(marks) };
+}
+
+// Statementgrenzen en markering volgen elke wijziging van tekst of cursor.
+const runTargetField = StateField.define({
+  create: state => runTargetState(state, splitStatements(state.doc.toString())),
+  update(value, tr) {
+    if (!tr.docChanged && !tr.selection) return value;
+    const statements = tr.docChanged ? splitStatements(tr.state.doc.toString()) : value.statements;
+    return runTargetState(tr.state, statements);
+  },
+  provide: f => EditorView.decorations.from(f, v => v.decorations),
+});
+
+// De SQL die Run uitvoert: de selectie, anders het statement onder de cursor;
+// bevat de cel geen statement (leeg, alleen commentaar), dan de hele cel.
+function runTargetSql(state) {
+  const sel = state.selection.main;
+  if (!sel.empty) return state.sliceDoc(sel.from, sel.to);
+  const { target } = state.field(runTargetField);
+  return target ? state.sliceDoc(target.from, target.to) : state.doc.toString();
+}
+
 // --- Acties per cel ---
-function runQuery(rec) {
+function runQuery(rec, sqlText) {
   if (!worker || !dbReady) {
     rec.outputEl.innerHTML =
       '<div class="sql-live-note">De database wordt nog geladen — probeer zo meteen opnieuw.</div>';
@@ -349,7 +445,7 @@ function runQuery(rec) {
   worker.postMessage({
     id: SHARED_ID,
     type: 'exec',
-    payload: { sql: rec.view.state.doc.toString(), limit: RUN_LIMIT, client: rec.client },
+    payload: { sql: sqlText, limit: RUN_LIMIT, client: rec.client },
   });
 }
 
@@ -357,11 +453,43 @@ function resetDatabase() {
   if (!worker) return;
   dbReady = false;
   clients.forEach(el => { el.textContent = OUTPUT_PLACEHOLDER; });
-  worker.postMessage({
-    id: SHARED_ID,
-    type: 'reset',
-    payload: seedBuf ? { seedBuf: seedBuf.slice(0) } : {},
-  });
+  discardSavedDb(); // terug naar de seed: ook de bewaarde kopie weg (#41)
+  worker.postMessage({ id: SHARED_ID, type: 'reset', payload: dbPayload({ withSaved: false }) });
+}
+
+// --- Bewaarde databank (#41) ---
+// De worker stuurt na elke Run die de databank wijzigde een snapshot (het
+// volledige SQLite-bestand). Die gaat naar IndexedDB (sql-db-store.js) en
+// blijft in het geheugen als herstelpunt voor de watchdog. Het label "eigen
+// databank" in elke celtoolbar verschijnt zodra de databank eigen wijzigingen
+// bevat — ook als de opslag ze niet kon bewaren; dat melden we dan één keer
+// in de balk "Mijn werk", met de download als uitweg.
+function setOwnDb(flag) {
+  ownDbBadges.forEach(el => { el.hidden = !flag; });
+}
+
+async function persistSnapshot(bytes) {
+  if (!(bytes instanceof Uint8Array)) return;
+  const gen = storeGen;
+  savedBuf = bytes;
+  setOwnDb(true);
+  const ok = await writeSavedDb(SHARED_ID, bytes);
+  if (gen !== storeGen) return; // intussen gereset: deze snapshot telt niet meer
+  dbSaved = ok;
+  if (!ok && !storageWarned) {
+    storageWarned = true;
+    reportWork(
+      'Je databank kon in deze browser niet bewaard worden (opslag geblokkeerd of vol): ' +
+      'na een herlaad staan de startgegevens er weer. Download je databank om ze niet te verliezen.',
+    );
+  }
+}
+
+function discardSavedDb() {
+  storeGen++;
+  savedBuf = null;
+  setOwnDb(false);
+  deleteSavedDb(SHARED_ID).then(() => { dbSaved = false; });
 }
 
 async function openSchema() {
@@ -369,53 +497,185 @@ async function openSchema() {
   mod.openSchemaOverlay({ worker, sharedId: SHARED_ID });
 }
 
-// --- Download van het eigen werk (#30) ---
-// Eén knop per pagina die de actuele inhoud van alle interactieve cellen als
-// één .sql-bestand exporteert, met een commentaarkop per cel ("-- cel 3").
+// --- Mijn werk: download (#30) en upload (#35) van het eigen werk ---
+// Eén balk per pagina, onder de laatste interactieve cel. "Download mijn
+// queries" exporteert de actuele inhoud van alle cellen als één .sql-bestand
+// met een commentaarkop per cel ("-- cel 3"; formaat in sql-queries-file.js).
 // Handig indienformaat, en de aangeraden uitweg voor wie op meerdere
 // toestellen werkt: de opslag uit #14 is per browser/toestel. De export leest
 // rechtstreeks uit de editors (niet uit localStorage), dus hij werkt ook als
 // opslag geblokkeerd is.
 function exportFileName() {
-  const page = (location.pathname.split('/').pop() || '')
-    .replace(/\.html?$/i, '')
-    .replace(/[^\w.-]+/g, '_');
+  const page = pageName(location.pathname).replace(/[^\w.-]+/g, '_');
   return `queries-${page || 'pagina'}.sql`;
 }
 
 function buildSqlExport() {
-  const parts = editorsApi.map(
-    ed => `-- cel ${ed.index + 1}\n${ed.getValue().trim()}\n`,
+  return buildQueriesFile(
+    location.pathname,
+    editorsApi.map(ed => ({ index: ed.index, sql: ed.getValue() })),
   );
-  return `-- Mijn queries — ${location.pathname}\n\n${parts.join('\n')}`;
 }
 
-function downloadQueries() {
-  const blob = new Blob([buildSqlExport()], { type: 'application/sql' });
+function saveBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = exportFileName();
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function addDownloadBar(lastCell) {
+function downloadQueries() {
+  saveBlob(new Blob([buildSqlExport()], { type: 'application/sql' }), exportFileName());
+}
+
+// "Download mijn databank" (#41): het actuele SQLite-bestand uit de worker
+// (db.export()), als .db-bestand — te openen in elk SQLite-programma en in te
+// dienen via Teams. De export leest de live databank, niet de bewaarde kopie,
+// dus hij werkt ook als IndexedDB geblokkeerd is.
+function databaseFileName() {
+  const page = pageName(location.pathname).replace(/[^\w.-]+/g, '_');
+  return `databank-${page || 'pagina'}.db`;
+}
+
+function requestExport() {
+  return new Promise((resolve, reject) => {
+    const w = worker;
+    const client = 'export';
+    const timer = setTimeout(() => { cleanup(); reject(new Error('de database antwoordt niet')); }, RUN_TIMEOUT_MS);
+    const onMessage = (ev) => {
+      const { id, type, payload } = ev.data || {};
+      if (id !== SHARED_ID || payload?.client !== client) return;
+      if (type === 'export') { cleanup(); resolve(payload.bytes); }
+      else if (type === 'error') { cleanup(); reject(new Error(payload.message || 'onbekende fout')); }
+    };
+    const cleanup = () => { clearTimeout(timer); w.removeEventListener('message', onMessage); };
+    w.addEventListener('message', onMessage);
+    w.postMessage({ id: SHARED_ID, type: 'export', payload: { client } });
+  });
+}
+
+async function downloadDatabase(report) {
+  if (!worker || !dbReady) {
+    report('De database wordt nog geladen — probeer zo meteen opnieuw.');
+    return;
+  }
+  try {
+    const bytes = await requestExport();
+    saveBlob(new Blob([bytes], { type: 'application/vnd.sqlite3' }), databaseFileName());
+  } catch (e) {
+    report(`Databank downloaden mislukt: ${e?.message || e}`);
+  }
+}
+
+// "Upload mijn queries" is de tegenhanger: het leest zo'n bestand en zet de
+// inhoud per cel terug via setValue(), waarna de gewone opslag (#14) hem
+// meteen bewaart — of niet, als opslag geblokkeerd is; het werk staat dan toch
+// live in de editors. Cellen met eigen werk (≠ startcode) worden pas
+// overschreven na bevestiging, net als een bestand van een andere pagina.
+// Komt het bestand van een oudere versie van de pagina (ander celaantal), dan
+// wordt teruggezet wat matcht en gemeld wat niet kon.
+function listCells(indexes) {
+  const nums = indexes.map(i => i + 1);
+  if (nums.length === 1) return `cel ${nums[0]}`;
+  return `cellen ${nums.slice(0, -1).join(', ')} en ${nums[nums.length - 1]}`;
+}
+
+function planImport(parsed) {
+  const restore = [];   // { editor, sql } — cellen die op deze pagina bestaan
+  const missing = [];   // indexen uit het bestand zonder cel op deze pagina
+  const overwrite = []; // indexen met eigen werk dat door het bestand verandert
+  for (const { index, sql } of parsed.cells) {
+    const editor = editorsApi[index];
+    if (!editor) { missing.push(index); continue; }
+    const current = editor.getValue();
+    if (current !== sql && current !== editor.initialValue) overwrite.push(index);
+    restore.push({ editor, sql });
+  }
+  return { restore, missing, overwrite };
+}
+
+function importQueries(text, report) {
+  const parsed = parseQueriesFile(text);
+  const { restore, missing, overwrite } = planImport(parsed);
+  if (!restore.length && !missing.length) {
+    report('Geen cellen gevonden in dit bestand. Kies een bestand dat je met "Download mijn queries" bewaarde.');
+    return;
+  }
+
+  const warnings = [];
+  if (parsed.page && pageName(parsed.page) !== pageName(location.pathname)) {
+    warnings.push(`Dit bestand komt van een andere pagina (${pageName(parsed.page)}).`);
+  }
+  if (overwrite.length) {
+    const which = listCells(overwrite);
+    warnings.push(
+      `${which[0].toUpperCase()}${which.slice(1)} van deze pagina ` +
+      `${overwrite.length === 1 ? 'bevat' : 'bevatten'} eigen werk dat door het bestand overschreven wordt.`,
+    );
+  }
+  if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nToch terugzetten?`)) {
+    report('Upload geannuleerd — er is niets gewijzigd.');
+    return;
+  }
+
+  restore.forEach(({ editor, sql }) => {
+    if (editor.getValue() !== sql) editor.setValue(sql);
+    cells[editor.index].flush?.(); // meteen bewaren (#14), niet pas na de debounce
+  });
+
+  const notes = [];
+  if (restore.length) notes.push(`Teruggezet: ${listCells(restore.map(r => r.editor.index))}.`);
+  if (missing.length) {
+    const count = editorsApi.length;
+    notes.push(
+      `Niet teruggezet: ${listCells(missing)} — deze pagina heeft ${count} ${count === 1 ? 'cel' : 'cellen'}; ` +
+      'het bestand komt wellicht van een oudere versie van de pagina.',
+    );
+  }
+  report(notes.join(' '));
+}
+
+function addMyWorkBar(lastCell) {
   const bar = document.createElement('div');
   bar.className = 'sql-download-bar';
   bar.innerHTML = `
     <span class="title">Mijn werk</span>
-    <span class="sql-live-note">Je werk wordt per browser bewaard — als bestand neem je het mee naar een ander toestel, of dien je het in.</span>
-    <button class="sql-live-btn download">Download mijn queries</button>
+    <span class="sql-live-note">Je queries en je databank worden per browser bewaard. Download ze als bestand om ze in te dienen of mee te nemen naar een ander toestel; met Upload zet je je queries hier weer terug.</span>
+    <span class="actions">
+      <button class="sql-live-btn download" title="Bewaart de inhoud van alle cellen op deze pagina als één .sql-bestand">Download mijn queries</button>
+      <button class="sql-live-btn upload" title="Zet de cellen van deze pagina terug uit een bestand van &quot;Download mijn queries&quot;">Upload mijn queries</button>
+      <button class="sql-live-btn download-db" title="Bewaart de databank van deze pagina, met al je wijzigingen, als .db-bestand (SQLite)">Download mijn databank</button>
+      <input class="sql-upload-input" type="file" accept=".sql,.txt,text/plain,application/sql" hidden>
+    </span>
+    <span class="sql-live-note sql-upload-status" role="status" aria-live="polite" hidden></span>
   `;
+  const input = bar.querySelector('.sql-upload-input');
+  const status = bar.querySelector('.sql-upload-status');
+  const report = (message) => { status.textContent = message; status.hidden = false; };
+  reportWork = report;
+
   bar.querySelector('.download').addEventListener('click', downloadQueries);
+  bar.querySelector('.download-db').addEventListener('click', () => downloadDatabase(report));
+  bar.querySelector('.upload').addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = ''; // hetzelfde bestand mag meteen opnieuw gekozen worden
+    if (!file) return;
+    try {
+      importQueries(await file.text(), report);
+    } catch (e) {
+      report(`Bestand lezen mislukt: ${e?.message || e}`);
+    }
+  });
   lastCell.after(bar);
 }
 
 // --- Editors opzetten ---
-function editorExtensions(langCompartment, run, onDocChange) {
+function editorExtensions(langCompartment, run, runAll, onDocChange) {
   return [
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -426,10 +686,12 @@ function editorExtensions(langCompartment, run, onDocChange) {
     closeBrackets(),
     autocompletion(),
     highlightActiveLine(),
+    runTargetField,
     plinkTheme,
     syntaxHighlighting(plinkHighlight),
     keymap.of([
       { key: 'Mod-Enter', run: () => { run(); return true; } },
+      { key: 'Mod-Shift-Enter', run: () => { runAll(); return true; } },
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
@@ -469,7 +731,9 @@ function initEditors(blocks) {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(syncStorage, SAVE_DEBOUNCE_MS);
     };
-    const run = () => { syncStorage(); runQuery(rec); };
+    // Opslag eerst wegschrijven (#14), ook bij een gedeeltelijke Run (#34).
+    const run = () => { syncStorage(); runQuery(rec, runTargetSql(view.state)); };
+    const runAll = () => { syncStorage(); runQuery(rec, view.state.doc.toString()); };
 
     const view = new EditorView({
       state: EditorState.create({
@@ -477,6 +741,7 @@ function initEditors(blocks) {
         extensions: editorExtensions(
           langCompartment,
           run,
+          runAll,
           () => {
             scheduleSync();
             const value = view.state.doc.toString();
@@ -490,8 +755,10 @@ function initEditors(blocks) {
     rec.flush = syncStorage;
     cells.push(rec);
     ui.ownEl.hidden = doc === initialDoc;
+    ownDbBadges.push(ui.ownDbEl);
 
     ui.runBtn.addEventListener('click', run);
+    ui.runAllBtn.addEventListener('click', runAll);
     ui.startBtn.addEventListener('click', () => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: initialDoc },
@@ -515,8 +782,8 @@ function initEditors(blocks) {
     });
   });
 
-  // Downloadknop (#30) onder de laatste interactieve cel van de pagina.
-  addDownloadBar(blocks[blocks.length - 1].cell);
+  // Balk "Mijn werk" (download #30, upload #35) onder de laatste interactieve cel.
+  addMyWorkBar(blocks[blocks.length - 1].cell);
 
   // Nog niet weggeschreven wijzigingen (debounce) alsnog bewaren bij het
   // verlaten of verbergen van de pagina.
@@ -533,14 +800,26 @@ onReady(async () => {
 
   try {
     const seedUrl = resolveStatic(seedUrlRaw); // bv. "/_static/db/webshop.db"
-    if (seedUrl) {
+    const fetchSeed = async () => {
       const res = await fetch(seedUrl);
       if (!res.ok) throw new Error(`database laden mislukt: ${res.status} (${seedUrl})`);
-      seedBuf = await res.arrayBuffer();
-    }
+      return res.arrayBuffer();
+    };
+    // Seed en bewaarde databank (#41) tegelijk ophalen; readSavedDb gooit
+    // nooit (geblokkeerde opslag → null → de seed).
+    [seedBuf, savedBuf] = await Promise.all([
+      seedUrl ? fetchSeed() : null,
+      readSavedDb(SHARED_ID),
+    ]);
+    dbSaved = savedBuf !== null;
 
     initEditors(blocks);
-    window.sqlLive = { editors: editorsApi, staticBase: STATIC_BASE };
+    window.sqlLive = {
+      editors: editorsApi,
+      staticBase: STATIC_BASE,
+      get dbReady() { return dbReady; }, // o.a. voor de e2e-tests (tests/test_sql_editor.py)
+      get dbSaved() { return dbSaved; }, // kopie van de databank staat in IndexedDB (#41)
+    };
     document.dispatchEvent(new CustomEvent('sql-live:ready', { detail: window.sqlLive }));
 
     await startWorker();

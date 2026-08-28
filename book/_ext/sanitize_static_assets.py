@@ -7,9 +7,10 @@
    SQL-editor als klassieke ``<script>``-tags op elke pagina terechtkomen,
    met consolefouten ("Unexpected token 'export'", "importScripts is not
    defined") tot gevolg. ``_prune_static_js`` houdt alleen ``sql-editors.js``
-   over — als ES-module (``type="module"``), zodat het de CodeMirror-bundel
-   en het overlay via ``import`` kan laden; de rest wordt on demand geladen
-   via ``import()`` of ``new Worker(...)``.
+   over — als ES-module (``type="module"``), zodat het de CodeMirror-bundel,
+   ``sql-statements.js``, ``sql-queries-file.js``, ``sql-db-store.js`` en het
+   overlay via ``import`` kan laden; de rest
+   wordt on demand geladen via ``import()`` of ``new Worker(...)``.
 
 2. Sphinx (t/m 7.x) zet inline scripts (``add_js_file(None, body=...)``) van
    extensies dubbel op de pagina: ``StandaloneHTMLBuilder.prepare_writing``
@@ -50,6 +51,9 @@ _KEEP_JS_MODULE = {
 _DROP_PREFIXES = ("codemirror/", "sqljs/", "tippy/", "mathjax/")
 _DROP_JS = {
     "sql-overlay.js",  # ES-module, dynamisch geimporteerd door sql-editors.js
+    "sql-statements.js",  # ES-module, statisch geimporteerd door sql-editors.js (#34)
+    "sql-queries-file.js",  # ES-module, statisch geimporteerd door sql-editors.js (#30/#35)
+    "sql-db-store.js",  # ES-module, statisch geimporteerd door sql-editors.js (#41)
     "sql-worker.js",   # workerscript, gestart via new Worker(...)
 }
 

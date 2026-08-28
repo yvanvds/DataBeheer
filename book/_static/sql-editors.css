@@ -36,6 +36,7 @@
   --sql-active-line: rgba(27, 27, 35, 0.05);               /* actieve regel (transparant, zodat selectie zichtbaar blijft) */
   --sql-tok-keyword: var(--plink-magenta-press, #C01F68);  /* SELECT, FROM, … — de vonk */
   --sql-tok-plain: var(--plink-ink-80, #3A3A42);           /* operatoren, getallen, types */
+  --sql-run-target: rgba(219, 39, 119, 0.07);              /* statement dat Run uitvoert (#34) */
   --sql-error: #B42318;                                    /* foutmeldingen */
 }
 
@@ -44,6 +45,7 @@ html[data-theme="dark"] {
   --sql-active-line: rgba(250, 247, 242, 0.06);
   --sql-tok-keyword: var(--plink-magenta-on-dark, #EC4899);
   --sql-tok-plain: #D8D3CA;
+  --sql-run-target: rgba(236, 72, 153, 0.12);
   --sql-error: #F97066;
 }
 
@@ -86,9 +88,12 @@ html[data-theme="dark"] {
   font-size: var(--sql-label-size);
   color: var(--sql-text-muted);
 }
-/* Indicator (#14): deze cel toont een eigen, in deze browser bewaarde versie
-   in plaats van de originele startcode. Subtiel caption-label naast de knoppen. */
-.sql-live-own {
+/* Indicatoren: "eigen versie" (#14) — deze cel toont een eigen, in deze
+   browser bewaarde versie in plaats van de originele startcode; "eigen
+   databank" (#41) — de databank bevat eigen wijzigingen (van nu of van een
+   vorig bezoek). Subtiele caption-labels naast de knoppen. */
+.sql-live-own,
+.sql-live-own-db {
   font-family: var(--sql-font-mono);
   font-size: var(--sql-label-size);
   letter-spacing: var(--sql-label-tracking);
@@ -100,9 +105,10 @@ html[data-theme="dark"] {
   font-size: .875rem;
   color: var(--sql-error);
 }
-/* Downloadbalk (#30): één knop per pagina, onder de laatste interactieve cel,
-   die alle celinhoud als één .sql-bestand exporteert. Zelfde vlakke taal als
-   de toolbar: hairline, raised vlak, mono-eyebrow. */
+/* Balk "Mijn werk" (#30 download, #35 upload): één per pagina, onder de
+   laatste interactieve cel. Zelfde vlakke taal als de toolbar: hairline,
+   raised vlak, mono-eyebrow. De knoppen staan samen rechts; de statusregel
+   van de upload krijgt een eigen regel eronder. */
 .sql-download-bar {
   display: flex; gap: .5rem .75rem; align-items: center;
   flex-wrap: wrap;
@@ -121,7 +127,15 @@ html[data-theme="dark"] {
   color: var(--sql-text-muted);
 }
 .sql-download-bar .sql-live-note { flex: 1 1 16rem; }
-.sql-download-bar .sql-live-btn { margin-left: auto; }
+.sql-download-bar .actions {
+  display: flex; gap: .5rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.sql-download-bar .sql-upload-status {
+  flex-basis: 100%;
+  color: var(--sql-text);
+}
 
 /* ── CodeMirror: syntaxkleuren (klassen uit sql-editors.js) ──
    Chrome-styling (achtergrond, gutter, selectie, tooltip) zit in het
@@ -130,6 +144,15 @@ html[data-theme="dark"] {
 .sql-live-editor .sql-tok-plain   { color: var(--sql-tok-plain); }
 .sql-live-editor .sql-tok-string  { color: var(--sql-text-muted); }
 .sql-live-editor .sql-tok-comment { color: var(--sql-text-caption); font-style: italic; }
+
+/* Run-doel (#34): de regels van het statement dat Run zou uitvoeren, alleen
+   gemarkeerd als de cel meer dan één statement bevat. Subtiel: een
+   accentstreep links en een zweem van de vonk, zodat het naast de actieve
+   regel leesbaar blijft. Bij een selectie is de selectie zelf de markering. */
+.sql-live-editor .cm-line.sql-run-line {
+  background: var(--sql-run-target);
+  box-shadow: inset 3px 0 0 var(--sql-accent);
+}
 
 /* NULL gestileerd (cursief, gedimd) — niet te verwarren met de tekst 'null' */
 .sql-null {
