@@ -38,6 +38,7 @@ parts:
     - file: chapters/ERD/03_ERD_tekenen
     - file: chapters/ERD/04_de_voetbal
     - file: chapters/ERD/05_de_cafetaria
+    - file: chapters/ERD/06_client_server
   - caption: Big Data
     numbered: false
     style: numerical
