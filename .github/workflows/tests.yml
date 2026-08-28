@@ -1,0 +1,77 @@
+# Tests op elke push: de structuurtests op de bronnen en de gebouwde HTML
+# (tests/test_book_structure.py), de Node-unittests van de pure editor-modules
+# (tests/*.test.mjs, via pytest aangeroepen) en de Playwright/Chromium-e2e-tests
+# van de SQL-editor (tests/test_sql_editor.py). Bewust los van
+# call-deploy-book.yml: een rode test blokkeert de publicatie niet, maar kleurt
+# de check op de PR wel rood (issue #39).
+#
+# De tests slaan zichzelf over als de build, Node, Playwright of Chromium
+# ontbreekt. In CI zou zo'n stille skip een groene run opleveren zonder dat er
+# iets getest is; daarom zet TESTS_FAIL_ON_SKIP=1 (zie tests/conftest.py) elke
+# skip om in een failure.
+name: tests
+
+on:
+  push:
+    # Net als call-deploy-book.yml: elke branch, zodat de check ook op PR's uit
+    # deze repo verschijnt; alleen als iets verandert dat de build of de tests raakt.
+    branches:
+      - '**'
+    paths:
+      - book/**
+      - tests/**
+      - requirements.txt
+      - requirements-dev.txt
+      - package.json
+      - package-lock.json
+      - .github/workflows/tests.yml
+  workflow_dispatch:
+
+# Een nieuwe push naar dezelfde branch vervangt een nog lopende testrun.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'   # zelfde versie als de TeachBooks deploy-workflow
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - uses: actions/setup-node@v7   # node --test voor tests/*.test.mjs
+        with:
+          node-version: 22
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Install Chromium for Playwright
+        run: playwright install --with-deps chromium
+
+      - name: Build the book
+        run: teachbooks build book
+
+      - name: Run tests
+        env:
+          TESTS_FAIL_ON_SKIP: "1"
+        shell: bash   # -o pipefail: de exitcode van pytest telt, niet die van tee
+        run: |
+          mkdir -p test-output
+          pytest tests -ra -v --junitxml=test-output/junit.xml 2>&1 | tee test-output/pytest.log
+
+      - name: Upload test output
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-output
+          path: test-output/
+          if-no-files-found: ignore
