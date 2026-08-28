@@ -13,23 +13,19 @@ execute:
 
 html:
   use_multitoc_numbering    : true                  # Default value (line can be removed), sets continuous numbering across parts/chapters, configuration part of Jupyter Book (https://jupyterbook.org/en/stable/customize/config.html). Same functionality per section can be defined with sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
-  extra_head: |
-    <script>window.__STATIC_BASE__ = "{{ pathto('_static', 1) }}";</script>
-    <script src="{{ pathto('_static/monaco/vs/loader.js', 1) }}"></script>
-    <!-- Restore AMD and normalize the global name -->
-    <link rel="stylesheet" href="{{ pathto('_static/sql-editors.css', 1) }}">
-    <link rel="modulepreload" href="{{ pathto('_static/sql-overlay.js', 1) }}">
-  extra_footer: |
-    <script type="module" src="{{ pathto('_static/sql-editors.js', 1) }}"></script>
 
+# De SQL-editors (Monaco + sql.js) worden geladen via de bestanden in _static:
+# Jupyter Book injecteert sql-editors.js en monaco/vs/loader.js (plus de CSS)
+# automatisch op elke pagina; sql-editors.js laadt Monaco, de worker en de
+# ES-modules daarna zelf. De lokale extensie _ext/sanitize_static_assets.py
+# houdt de overige _static-bestanden uit de paginascripts (issue #24).
 sphinx:                                              # Options passed on to the underlying sphinx-parser
   extra_extensions:                                  # Sets a list of extensions to load by sphinx, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     - teachbooks_favourites                          # Gives you a starter package of extensions to use in your book, replace with individual extensions if you prefer some extensions not to be included (https://github.com/TeachBooks/TeachBooks-Favourites)
-  local_extension: null                              # Sets a a list of local extensions to load by sphinx, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
+  local_extensions:                                  # Local extensions loaded by sphinx, path is relative to this file (https://jupyterbook.org/en/stable/advanced/sphinx.html#local-sphinx-extensions)
+    sanitize_static_assets: _ext                     # Voorkomt dubbele/foute scriptinjectie die consolefouten gaf (issue #24), zie _ext/sanitize_static_assets.py
   config:
     language: nl                                     # Defines language (English) of everything except the content itself. For Dutch: replace with `nl`, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
-    html_js_files:
-    - https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js # Required for live code, part of TeachBooks-Sphinx-Thebe (https://teachbooks.io/manual/features/live_code.html)
     html_css_files:                                  # Plink Labs huisstijl: webfonts Fraunces / Hanken Grotesk / Space Mono via Google Fonts (tokens en thema staan in _static/plink-theme.css en _static/plink/tokens.css, die automatisch geladen worden)
     - https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..650&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Space+Mono:wght@400;700&display=swap
     thebe_config:
