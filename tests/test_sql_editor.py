@@ -9,7 +9,8 @@ op de site (issue #42). De controlecel voor PRAGMA foreign_keys in ERD
 hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue
 #43). De editor zet die bewaking zelf aan bij het openen van elke sessie, op
 elke pagina en ook na Reset db, zodat de lessen er niet meer aan hoeven te
-herinneren (issue #46).
+herinneren (issue #46). Op een klein leerlingenscherm laat "Groot scherm" één
+cel de hele viewport vullen (issue #48).
 
 Twee lagen:
 
@@ -1068,3 +1069,161 @@ def test_normalisation_lesson_builds_its_tables_with_foreign_keys_on(page, site_
         expect(control.locator("span.sql-null")).to_have_count(0)  # elke bestelling heeft een klant
     finally:
         context.close()
+
+
+# --- e2e: schermvullende modus per cel (#48) --------------------------------
+
+# De laptops van de leerlingen hebben een klein scherm; op 1366×768 blijft er
+# tussen lestekst, sidebar en navigatie weinig over voor een langere query of
+# een brede resultaattabel. De knop "Groot scherm" laat één cel de hele
+# viewport vullen; de knop zelf of Esc brengt de gewone lay-out terug.
+LAPTOP = {"width": 1366, "height": 768}
+FULLSCREEN_BTN = "button.fullscreen"
+
+
+@pytest.fixture(scope="module")
+def laptop_page(page, site_url):
+    """De eerste SQL-pagina in een eigen context op laptopformaat (1366×768)."""
+    context = page.context.browser.new_context(viewport=LAPTOP)
+    laptop = context.new_page()
+    laptop.goto(site_url + PAGE)
+    wait_ready(laptop)
+    try:
+        yield laptop
+    finally:
+        context.close()
+
+
+def fullscreen_button(page, index: int = 0):
+    return cell_at(page, index).locator(FULLSCREEN_BTN)
+
+
+def box(locator) -> dict:
+    b = locator.bounding_box()
+    assert b is not None, "element is niet zichtbaar"
+    return b
+
+
+def page_scrolls(page) -> bool:
+    """Scrollt de pagina mee als de leerling het muiswiel gebruikt? Bewust met
+    een echte wielbeweging: `window.scrollTo` scrolt ook een pagina die met
+    `overflow: hidden` op slot staat. De muis staat boven de lestekst bovenaan
+    de pagina; in schermvullende stand ligt de cel daaroverheen."""
+    before = page.evaluate("() => window.scrollY")
+    page.evaluate("() => window.scrollTo(0, 0)")
+    page.mouse.move(LAPTOP["width"] // 2, 400)
+    page.mouse.wheel(0, 400)
+    page.wait_for_timeout(250)
+    moved = page.evaluate("() => window.scrollY") != 0
+    page.evaluate("y => window.scrollTo(0, y)", before)
+    return moved
+
+
+def test_every_cell_has_a_fullscreen_button(laptop_page) -> None:
+    """De knop staat in de balk van élke cel, naast Run / Run alles / Schema /
+    Reset db, en staat bij het openen van de pagina uit."""
+    cells = laptop_page.locator(".sql-live-wrap")
+    expect(laptop_page.locator(f".sql-live-toolbar {FULLSCREEN_BTN}")).to_have_count(cells.count())
+    btn = fullscreen_button(laptop_page)
+    expect(btn).to_have_text("Groot scherm")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+
+
+def test_fullscreen_fills_the_laptop_viewport_and_esc_restores(laptop_page) -> None:
+    """Het scenario van #48 op een leerlingenlaptop: klikken op "Groot scherm"
+    laat de cel de viewport vullen (editor én resultaatpaneel), Run werkt in
+    die stand gewoon, de pagina eronder scrollt niet mee, en Esc zet de
+    oorspronkelijke lay-out terug."""
+    laptop_page.evaluate("() => window.scrollTo(0, 0)")
+    wrap = cell(laptop_page)
+    editor = wrap.locator(".sql-live-editor")
+    normal, normal_editor = box(wrap), box(editor)
+    assert normal["height"] < LAPTOP["height"], normal  # tussen de lestekst: klein
+    assert page_scrolls(laptop_page), "de pagina scrolt normaal niet — test zegt niets"
+
+    fullscreen_button(laptop_page).click()
+
+    full = box(wrap)
+    assert (round(full["x"]), round(full["y"])) == (0, 0), full
+    assert (round(full["width"]), round(full["height"])) == (LAPTOP["width"], LAPTOP["height"]), full
+    # De editor krijgt de resterende hoogte (toolbar en resultaatpaneel eraf).
+    grown = box(editor)
+    assert grown["height"] > normal_editor["height"] + 100, (normal_editor, grown)
+    assert not page_scrolls(laptop_page), "de pagina achter de cel scrolt mee"
+
+    # De cursor staat in de editor, dus de sneltoetsen werken meteen.
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    load_sql(laptop_page, three_statements("groot"))
+    click_line(laptop_page, "SELECT 2")
+    laptop_page.keyboard.press("Control+Enter")
+    expect(result_headers(laptop_page)).to_have_text(["tweede_groot"])
+    cell(laptop_page).locator("button.runall").click()
+    expect(result_headers(laptop_page)).to_have_text(["eerste_groot", "tweede_groot", "derde_groot"])
+    assert (round(box(wrap)["width"]), round(box(wrap)["height"])) == (LAPTOP["width"], LAPTOP["height"])
+
+    laptop_page.keyboard.press("Escape")
+
+    # Terug in de lestekst: dezelfde plek en breedte als daarnet, en weer een
+    # gewone hoogte (het resultaatpaneel maakt de cel nu wel wat hoger).
+    back = box(wrap)
+    assert (round(back["x"]), round(back["width"])) == (round(normal["x"]), round(normal["width"])), back
+    assert back["height"] < LAPTOP["height"], back
+    assert page_scrolls(laptop_page), "de pagina scrolt na Esc niet opnieuw"
+    expect(fullscreen_button(laptop_page)).to_have_text("Groot scherm")
+
+
+def test_the_button_also_closes_and_the_result_panel_scrolls_on_its_own(laptop_page) -> None:
+    """Dezelfde knop sluit weer (label en aria-pressed schakelen mee), en een
+    lange resultaattabel scrollt in het paneel zelf zonder de pagina eronder
+    mee te nemen."""
+    laptop_page.evaluate("() => window.scrollTo(0, 0)")
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_text("Klein scherm")
+    expect(btn).to_have_attribute("aria-pressed", "true")
+
+    run_all(laptop_page, "SELECT name, unit_price FROM products;")  # 41 rijen
+    expect(result_headers(laptop_page)).to_have_text(["name", "unit_price"])
+    panel = output(laptop_page)
+    behind = laptop_page.evaluate("() => window.scrollY")
+    scrolled = panel.evaluate(
+        "el => { const room = el.scrollHeight - el.clientHeight; el.scrollTop = room; "
+        "return { room, top: el.scrollTop }; }"
+    )
+    assert scrolled["room"] > 0, "het resultaatpaneel is niet hoger dan zijn venster"
+    assert scrolled["top"] > 0, "het resultaatpaneel scrolt niet zelfstandig"
+    assert laptop_page.evaluate("() => window.scrollY") == behind, "de pagina eronder schoof mee"
+
+    btn.click()
+    expect(btn).to_have_text("Groot scherm")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+    assert round(box(cell(laptop_page))["height"]) < LAPTOP["height"]
+    assert page_scrolls(laptop_page)
+
+
+def test_schema_stays_reachable_and_esc_closes_it_before_the_fullscreen(laptop_page) -> None:
+    """In schermvullende stand blijft Schema bereikbaar: het overlay komt over
+    de cel heen. Esc sluit dan eerst het schema; pas de volgende Esc brengt de
+    gewone lay-out terug."""
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+
+    cell(laptop_page).locator("button.schema").click()
+    overlay = laptop_page.locator(".sql-schema-overlay")
+    expect(overlay).to_be_visible()
+    panel = overlay.locator(".sql-schema-panel")
+    middle = box(panel)
+    on_top = laptop_page.evaluate(
+        "([x, y]) => !!document.elementFromPoint(x, y).closest('.sql-schema-overlay')",
+        [round(middle["x"] + middle["width"] / 2), round(middle["y"] + middle["height"] / 2)],
+    )
+    assert on_top, "het schema-overlay ligt onder de schermvullende cel"
+
+    laptop_page.keyboard.press("Escape")
+    expect(overlay).to_be_hidden()
+    expect(btn).to_have_attribute("aria-pressed", "true")  # de cel blijft schermvullend
+
+    laptop_page.keyboard.press("Escape")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+    assert page_scrolls(laptop_page)

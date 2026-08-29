@@ -32,7 +32,9 @@
 //     SQLite-programma en in te dienen via Teams);
 //   - Run voert de selectie uit, of anders het statement onder de cursor
 //     (subtiel gemarkeerd); "Run alles" (Mod-Shift-Enter) voert de hele cel
-//     uit (#34, statementgrenzen in sql-statements.js).
+//     uit (#34, statementgrenzen in sql-statements.js);
+//   - "Groot scherm" (#48) laat één cel de viewport vullen — een overlay, geen
+//     Fullscreen API; Esc of dezelfde knop brengt de gewone lay-out terug.
 
 import {
   EditorState, Compartment, StateField,
@@ -187,6 +189,7 @@ function wrapCell(cell) {
       <button class="sql-live-btn startcode" title="Zet de originele startcode van deze cel terug">Startcode</button>
       <button class="sql-live-btn reset" title="Zet de databank terug naar de startgegevens (je query blijft staan)">Reset db</button>
       <button class="sql-live-btn schema">Schema</button>
+      <button class="sql-live-btn fullscreen" aria-pressed="false" title="${FULLSCREEN_TITLE.off}">${FULLSCREEN_LABEL.off}</button>
       <span class="sql-live-note">Ctrl/Cmd+Enter: statement bij de cursor · +Shift: alles</span>
     </div>
     <div class="sql-live-editor"></div>
@@ -194,6 +197,7 @@ function wrapCell(cell) {
   `;
   cell.appendChild(wrap);
   return {
+    wrap,
     editorEl: wrap.querySelector('.sql-live-editor'),
     outputEl: wrap.querySelector('.sql-live-output'),
     ownEl: wrap.querySelector('.sql-live-own'),
@@ -203,8 +207,84 @@ function wrapCell(cell) {
     startBtn: wrap.querySelector('.startcode'),
     resetBtn: wrap.querySelector('.reset'),
     schemaBtn: wrap.querySelector('.schema'),
+    fullscreenBtn: wrap.querySelector('.fullscreen'),
   };
 }
+
+// --- Schermvullende modus per cel (#48) -------------------------------------
+// De laptops van de leerlingen hebben een klein scherm; tussen lestekst,
+// sidebar en navigatie blijft er weinig over voor een langere query of een
+// brede resultaattabel. Deze knop laat één cel de hele viewport vullen.
+//
+// Bewust een `position: fixed`-overlay (klasse in sql-editors.css) en niet de
+// Fullscreen API: die wordt geblokkeerd zodra de site in een iframe zonder
+// `allowfullscreen` staat en toont een melding van de browser. De overlay doet
+// het overal hetzelfde, en omdat alleen een klasse verandert blijft de
+// CodeMirror-view intact — dus ook de ongedaan-maken-geschiedenis, de
+// selectie en de sneltoetsen (Ctrl/Cmd+Enter, Ctrl/Cmd+Shift+Enter).
+//
+// De balk "Mijn werk" (download/upload/databank) valt in deze stand bewust
+// buiten beeld: die hoort bij de hele pagina, niet bij één cel. Zie SQL
+// hoofdstuk 1, "De SQL-editor: snel opstarten".
+const FULLSCREEN_CLASS = 'sql-live-fullscreen';   // op de cel zelf
+const PAGE_LOCK_CLASS = 'sql-live-page-locked';   // op <html>: pagina eronder staat stil
+const FULLSCREEN_LABEL = { off: 'Groot scherm', on: 'Klein scherm' };
+const FULLSCREEN_TITLE = {
+  off: 'Laat deze cel het hele scherm vullen — handig op een klein laptopscherm',
+  on: 'Terug naar de gewone lay-out (of druk op Esc)',
+};
+
+let fullscreenCell = null; // { wrap, view, btn } van de cel die nu openstaat
+
+function markFullscreenButton(btn, active) {
+  btn.textContent = active ? FULLSCREEN_LABEL.on : FULLSCREEN_LABEL.off;
+  btn.title = active ? FULLSCREEN_TITLE.on : FULLSCREEN_TITLE.off;
+  btn.setAttribute('aria-pressed', String(active));
+}
+
+// CodeMirror meet zijn regelhoogtes en scrollpositie zelf; na een verandering
+// van de hoogte buiten zijn weten om moet dat opnieuw. De focus blijft (of
+// komt) in de editor, zodat de sneltoetsen meteen werken.
+function remeasure(view) {
+  view.requestMeasure();
+  view.focus();
+}
+
+function exitFullscreen() {
+  if (!fullscreenCell) return;
+  const { wrap, view, btn } = fullscreenCell;
+  fullscreenCell = null;
+  wrap.classList.remove(FULLSCREEN_CLASS);
+  document.documentElement.classList.remove(PAGE_LOCK_CLASS);
+  markFullscreenButton(btn, false);
+  wrap.scrollIntoView({ block: 'nearest' }); // de cel weer in beeld in de lestekst
+  remeasure(view);
+}
+
+function enterFullscreen(wrap, view, btn) {
+  exitFullscreen(); // hoogstens één cel tegelijk over de pagina
+  fullscreenCell = { wrap, view, btn };
+  wrap.classList.add(FULLSCREEN_CLASS);
+  document.documentElement.classList.add(PAGE_LOCK_CLASS);
+  markFullscreenButton(btn, true);
+  remeasure(view);
+}
+
+function toggleFullscreen(wrap, view, btn) {
+  if (fullscreenCell && fullscreenCell.wrap === wrap) exitFullscreen();
+  else enterFullscreen(wrap, view, btn);
+}
+
+// Esc sluit de schermvullende stand. `defaultPrevented` laat de toets eerst
+// aan wie hem al gebruikte: de autocomplete-lijst van CodeMirror sluit
+// zichzelf met Esc, en het schema-overlay (dat bovenop deze stand komt) heeft
+// zijn eigen Esc-afhandeling in sql-overlay.js.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !fullscreenCell || e.defaultPrevented) return;
+  if (document.querySelector('.sql-schema-overlay.visible')) return;
+  e.preventDefault();
+  exitFullscreen();
+});
 
 // --- CodeMirror in de Plink-huisstijl ---
 // De kleuren komen uit de `--sql-*`-tokens in sql-editors.css; die schakelen
@@ -768,6 +848,7 @@ function initEditors(blocks) {
     });
     ui.resetBtn.addEventListener('click', resetDatabase);
     ui.schemaBtn.addEventListener('click', openSchema);
+    ui.fullscreenBtn.addEventListener('click', () => toggleFullscreen(ui.wrap, view, ui.fullscreenBtn)); // #48
 
     // Publieke API per cel (#14) — dezelfde sleutel als in localStorage.
     editorsApi.push({

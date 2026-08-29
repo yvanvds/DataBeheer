@@ -2,7 +2,8 @@
 de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
 het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
 interactieve cellen (issue #43), de foreign keys die de site-editor zelf
-aanzet (issue #46) en de verankering van de onderzoekscompetenties
+aanzet (issue #46), de knop die een cel schermvullend maakt (issue #48)
+en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
 
@@ -558,6 +559,12 @@ def test_no_sql_cell_switches_foreign_keys_on_itself() -> None:
     )
 
 
+# Labels van de knop die één cel schermvullend maakt (issue #48), zoals de
+# toolbar ze toont in book/_static/sql-editors.js.
+FULLSCREEN_ON = "**Groot scherm**"
+FULLSCREEN_OFF = "**Klein scherm**"
+
+
 def test_editor_documentation_says_foreign_keys_are_always_on() -> None:
     """Issue #46: de uitleg van de editor (SQL hoofdstuk 1, "De SQL-editor:
     snel opstarten") vermeldt dat foreign keys in de site-editor altijd aan
@@ -566,6 +573,24 @@ def test_editor_documentation_says_foreign_keys_are_always_on() -> None:
     assert re.search(r"foreign keys", text, flags=re.IGNORECASE), "SQL hoofdstuk 1: noemt foreign keys niet"
     assert FOREIGN_KEYS_ON in text, f"SQL hoofdstuk 1: noemt {FOREIGN_KEYS_ON} niet"
     assert re.search(r"\baltijd aan\b", text), "SQL hoofdstuk 1: zegt niet dat de bewaking altijd aan staat"
+
+
+def test_editor_documentation_explains_the_fullscreen_button() -> None:
+    """Issue #48: de uitleg van de editor (SQL hoofdstuk 1, "De SQL-editor:
+    snel opstarten") beschrijft de knop die één cel het hele scherm laat
+    vullen — hoe je terugkeert (dezelfde knop of Esc) en dat de balk "Mijn
+    werk" in die stand bewust buiten beeld valt."""
+    text = source_of("chapters/SQL/01_Starten_met_sql")
+    item = next((line for line in text.splitlines() if FULLSCREEN_ON in line), None)
+    assert item, f"SQL hoofdstuk 1: noemt de knop {FULLSCREEN_ON} niet"
+    problems = []
+    if FULLSCREEN_OFF not in item:
+        problems.append(f"zegt niet dat dezelfde knop dan {FULLSCREEN_OFF} heet")
+    if "Esc" not in item:
+        problems.append("noemt Esc niet als tweede manier om terug te keren")
+    if "Mijn werk" not in item:
+        problems.append('zegt niet wat er met de balk "Mijn werk" gebeurt')
+    assert not problems, "SQL hoofdstuk 1: " + "; ".join(problems)
 
 
 def test_working_outside_the_site_says_to_switch_foreign_keys_on() -> None:
@@ -883,6 +908,14 @@ def test_html_build_lessons_have_live_cells_and_no_seed() -> None:
                 problems.append(f"{rel}: niet zichtbaar: {phrase!r}")
         problems += [f"{rel}: {hit}" for hit in find_phrases(visible, DB_BROWSER_WORKFLOW)]
     assert not problems, "\n".join(problems)
+
+
+def test_html_editor_page_shows_the_fullscreen_step() -> None:
+    """Issue #48: wat de leerling op de gebouwde pagina leest — de stap over de
+    schermvullende cel staat in het lijstje met de andere knoppen."""
+    text = html.unescape(re.sub(r"<[^>]+>", "", article_html("chapters/SQL/01_Starten_met_sql")))
+    for needle in ("Groot scherm", "Klein scherm", "Esc"):
+        assert needle in text, f"SQL hoofdstuk 1 (gebouwd): {needle!r} staat niet in de uitleg"
 
 
 def test_html_competency_page_renders_rubric_and_leerplan() -> None:

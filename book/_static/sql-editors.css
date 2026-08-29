@@ -137,6 +137,42 @@ html[data-theme="dark"] {
   color: var(--sql-text);
 }
 
+/* ── schermvullende modus per cel (#48) ──────────────────────
+   Kleine leerlingenschermen: één cel vult de viewport, zodat er ruimte is
+   voor een langere query en een brede resultaattabel. Bewust een
+   `position: fixed`-overlay en niet de Fullscreen API — die wordt geblokkeerd
+   in een iframe zonder `allowfullscreen` en toont een melding van de browser.
+   De z-index blijft onder die van het schema-overlay (9999), zodat Schema ook
+   in deze stand bovenop komt. De balk "Mijn werk" valt bewust buiten beeld:
+   die hoort bij de hele pagina, niet bij één cel. */
+.sql-live-wrap.sql-live-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sql-live-wrap.sql-live-fullscreen .sql-live-toolbar { flex: 0 0 auto; }
+/* De editor krijgt de resterende hoogte; min-height: 0 laat hem in een
+   flex-kolom ook echt krimpen in plaats van zijn inhoud te volgen. */
+.sql-live-wrap.sql-live-fullscreen .sql-live-editor {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 6rem;
+}
+/* Het resultaatpaneel scrollt zelfstandig en neemt hoogstens de helft. */
+.sql-live-wrap.sql-live-fullscreen .sql-live-output {
+  flex: 0 1 auto;
+  max-height: 45vh;
+  overflow: auto;
+}
+/* Zolang een cel schermvullend staat, scrolt de pagina eronder niet mee. */
+html.sql-live-page-locked,
+html.sql-live-page-locked body { overflow: hidden; }
+
 /* ── CodeMirror: syntaxkleuren (klassen uit sql-editors.js) ──
    Chrome-styling (achtergrond, gutter, selectie, tooltip) zit in het
    EditorView-thema in sql-editors.js, met dezelfde --sql-*-tokens. */
