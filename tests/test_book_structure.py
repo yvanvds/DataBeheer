@@ -1,7 +1,8 @@
 """Structuurtests voor het boek: deelvolgorde, kruisverwijzingen en prev/next-flow (issue #36),
 de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
 het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
-interactieve cellen (issue #43) en de verankering van de onderzoekscompetenties
+interactieve cellen (issue #43), de foreign keys die de site-editor zelf
+aanzet (issue #46) en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
 
@@ -15,9 +16,11 @@ eerst met `teachbooks build book`.
 """
 from __future__ import annotations
 
+import functools
 import html
 import json
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -109,11 +112,20 @@ BUILD_LESSONS = {
     "chapters/ERD/05_de_cafetaria": "databank-05_de_cafetaria.db",
 }
 DOWNLOAD_DB_BUTTON = "Download mijn databank"
-# PRAGMA foreign_keys staat in sql.js standaard uit en overleeft geen herlaad
-# van de pagina: de cafetaria-les voert de regel in een eigen cel uit en zegt
-# dat je ze na het heropenen van de pagina opnieuw uitvoert.
-FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON;"
+# PRAGMA foreign_keys (issue #46): in SQLite — en dus in sql.js — staat de
+# bewaking van foreign keys standaard uit. De site-editor zet ze zelf aan bij
+# het openen van elke sessie (book/_static/sql-worker.js), op elke pagina en
+# ook na Reset db. De lessen herinneren er daarom niet meer aan: hun
+# pragma-cellen zijn een controle geworden (`PRAGMA foreign_keys;` → 1) en
+# geen enkele cel voert de instelling zelf nog uit. Dat de instelling elders
+# uit staat, blijft wél in de cursus staan — bij de plaatsen waar een leerling
+# een .db-bestand buiten de site opent (de DB Browser-uitklapbox in het
+# laatste ERD-hoofdstuk).
+FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON"
 FOREIGN_KEYS_CHECK = "PRAGMA foreign_keys;"
+# Waar de cursus buiten de site-editor werkt, moet ze zeggen dat de bewaking
+# daar aan moet en hoe je dat controleert.
+OUTSIDE_THE_SITE_PAGES = [LAST_ERD]
 
 # Interactieve cellen (issue #43): de editor geeft de celinhoud aan SQLite
 # (sql.js), en SQL kent alleen `--` en `/* … */` als commentaar. Een regel die
@@ -335,6 +347,53 @@ def build_up_table() -> dict[int, dict[str, str]]:
     return rows
 
 
+@functools.lru_cache(maxsize=None)
+def _seed_columns(rel_path: str) -> dict[str, tuple[str, ...]]:
+    """{tabel: (kolommen)} van een seed-databank uit een sql-db-cel, relatief
+    aan book/ (de cel bevat het pad zoals de site het opvraagt: /_static/…).
+    Gebufferd: adventureworks.db staat onder meer dan tien pagina's."""
+    path = BOOK / rel_path
+    if not path.is_file():  # externe seed of typefout: elders getest
+        return {}
+    con = sqlite3.connect(path)
+    try:
+        names = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        return {name: tuple(r[1] for r in con.execute(f'PRAGMA table_info("{name}")')) for name in names}
+    finally:
+        con.close()
+
+
+def _columns_of_the_page(rel: str, create_table: re.Pattern) -> dict[str, tuple[str, ...]]:
+    """{tabel: (kolommen)} van alles wat op een pagina bestaat: de seed uit de
+    sql-db-cel plus elke tabel die een sql-live-cel aanmaakt. De CREATE TABLEs
+    draaien in een lege in-memory databank (zonder foreign keys, want een
+    tabel kan naar een latere verwijzen); een tabel die de les opnieuw
+    aanmaakt, wordt hier gewoon overschreven."""
+    columns: dict[str, tuple[str, ...]] = {}
+    con = sqlite3.connect(":memory:")
+    try:
+        for seed in code_cells_tagged(rel, "sql-db"):
+            columns.update(_seed_columns(seed.strip().lstrip("/")))
+        for sql in code_cells_tagged(rel, "sql-live"):
+            for statement in _create_table_statements(sql, create_table):
+                name = create_table.search(statement).group(1)
+                try:
+                    con.execute(f'DROP TABLE IF EXISTS "{name}"')
+                    con.execute(statement)
+                except sqlite3.Error:  # onvolledige startcode van een opdrachtcel
+                    continue
+                columns[name] = tuple(r[1] for r in con.execute(f'PRAGMA table_info("{name}")'))
+    finally:
+        con.close()
+    return columns
+
+
+def _create_table_statements(sql: str, create_table: re.Pattern) -> list[str]:
+    """De CREATE TABLE-statements uit een cel, gesplitst op `;` buiten strings.
+    De cellen in dit boek gebruiken geen `;` in stringliteralen."""
+    return [s for s in (part.strip() for part in sql.split(";")) if create_table.match(s)]
+
+
 def article_html(rel: str) -> str:
     """Alleen de inhoud van een gebouwde pagina (zonder zijbalk, prev/next en de rest van het thema)."""
     m = re.search(r"<article[^>]*>(.*?)</article>", page_html(rel), flags=re.DOTALL)
@@ -464,17 +523,64 @@ def test_build_lessons_run_on_the_site_editor() -> None:
     assert not problems, "\n".join(problems)
 
 
-def test_cafetaria_lesson_switches_foreign_keys_on_in_a_runnable_cell() -> None:
+def test_cafetaria_lesson_only_checks_that_foreign_keys_are_on() -> None:
+    """Issue #46: fase 6 (6.2) en fase 7 (7.0) hadden elk een cel die
+    `PRAGMA foreign_keys = ON` uitvoerde, plus de waarschuwing dat je die na
+    het heropenen van de pagina opnieuw moest uitvoeren. De editor zet de
+    bewaking nu zelf aan; beide cellen zijn een controle geworden en de
+    waarschuwing is weg."""
     rel = "chapters/ERD/05_de_cafetaria"
-    pragma_cells = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_ON in sql]
-    assert len(pragma_cells) >= 2, f"{rel}: {FOREIGN_KEYS_ON} hoort in een eigen cel bij fase 6 én als herinnering bij fase 7"
+    checks = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_CHECK in sql]
+    assert len(checks) == 2, f"{rel}: verwachtte een controlecel bij 6.2 én bij 7.0, vond er {len(checks)}"
     text = source_of(rel)
-    assert re.search(
-        r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;`|`PRAGMA foreign_keys = ON;`.{0,160}\bopnieuw\b",
+    assert not re.search(
+        r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;?`|`PRAGMA foreign_keys = ON;?`.{0,160}\bopnieuw\b",
         text,
         flags=re.DOTALL,
-    ), f"{rel}: legt niet uit dat je {FOREIGN_KEYS_ON} na het heropenen van de pagina opnieuw uitvoert"
-    assert "Reset db" in text, f"{rel}: noemt Reset db niet (zet de instelling ook uit)"
+    ), f"{rel}: vraagt nog altijd om {FOREIGN_KEYS_ON} opnieuw uit te voeren"
+
+
+def test_no_sql_cell_switches_foreign_keys_on_itself() -> None:
+    """Issue #46: `PRAGMA foreign_keys = ON` is het werk van de editor
+    (book/_static/sql-worker.js), niet van een les. Geen enkele sql-db- of
+    sql-live-cel in het boek voert de instelling nog uit — anders komt de
+    herinnering langs een achterdeur terug."""
+    problems = []
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            for tag in SQL_CELL_TAGS:
+                for n, sql in enumerate(code_cells_tagged(rel, tag), 1):
+                    if re.search(rf"^\s*{re.escape(FOREIGN_KEYS_ON)}", sql, flags=re.MULTILINE | re.IGNORECASE):
+                        problems.append(f"{rel}: {tag}-cel {n}")
+    assert not problems, (
+        "de site-editor zet foreign keys zelf aan; deze cellen doen het opnieuw:\n" + "\n".join(problems)
+    )
+
+
+def test_editor_documentation_says_foreign_keys_are_always_on() -> None:
+    """Issue #46: de uitleg van de editor (SQL hoofdstuk 1, "De SQL-editor:
+    snel opstarten") vermeldt dat foreign keys in de site-editor altijd aan
+    staan — daar leest een leerling wat de editor voor hem doet."""
+    text = source_of("chapters/SQL/01_Starten_met_sql")
+    assert re.search(r"foreign keys", text, flags=re.IGNORECASE), "SQL hoofdstuk 1: noemt foreign keys niet"
+    assert FOREIGN_KEYS_ON in text, f"SQL hoofdstuk 1: noemt {FOREIGN_KEYS_ON} niet"
+    assert re.search(r"\baltijd aan\b", text), "SQL hoofdstuk 1: zegt niet dat de bewaking altijd aan staat"
+
+
+def test_working_outside_the_site_says_to_switch_foreign_keys_on() -> None:
+    """Issue #46: de uitleg over de standaardinstelling verdwijnt niet, ze
+    verhuist. Waar een leerling een .db-bestand buiten de site-editor opent
+    (de DB Browser-uitklapbox in het laatste ERD-hoofdstuk), moet staan dat de
+    bewaking daar aan moet en hoe je dat controleert."""
+    problems = []
+    for rel in OUTSIDE_THE_SITE_PAGES:
+        text = source_of(rel)
+        if FOREIGN_KEYS_ON not in text:
+            problems.append(f"{rel}: zegt niet hoe je de bewaking aanzet ({FOREIGN_KEYS_ON})")
+        if FOREIGN_KEYS_CHECK not in text:
+            problems.append(f"{rel}: zegt niet hoe je de instelling controleert ({FOREIGN_KEYS_CHECK})")
+    assert not problems, "\n".join(problems)
 
 
 def test_sql_cells_use_only_sql_comments() -> None:
@@ -493,26 +599,52 @@ def test_sql_cells_use_only_sql_comments() -> None:
     assert not problems, "geen SQL-commentaar (gebruik -- of /* … */):\n" + "\n".join(problems)
 
 
-def test_first_erd_page_checks_foreign_keys_like_the_cafetaria_lesson() -> None:
-    """ERD hoofdstuk 1, §5 (#43): de controlecel voert PRAGMA foreign_keys uit,
-    zet de instelling aan zoals hoofdstuk 5 (6.2) en controleert opnieuw — één
-    cel die met "Run alles" 0 en dan 1 laat zien. De tekst zegt, net als daar,
-    dat de instelling na het heropenen van de pagina of Reset db weer uit staat."""
+def test_first_erd_page_only_checks_that_foreign_keys_are_on() -> None:
+    """ERD hoofdstuk 1, §5 (#43, #46): de cel is één controle die meteen `1`
+    geeft — geen instructie meer om de instelling zelf aan te zetten. De
+    uitleg "in SQLite standaard uit" blijft, maar hoort nu bij het werken
+    buiten deze site."""
     rel = FIRST_ERD
     cells = [sql for sql in code_cells_tagged(rel, "sql-live") if FOREIGN_KEYS_CHECK in sql]
     assert len(cells) == 1, f"{rel}: verwachtte precies één sql-live-cel met {FOREIGN_KEYS_CHECK}, vond {len(cells)}"
     sql = cells[0]
-    assert FOREIGN_KEYS_ON in sql, f"{rel}: de controlecel zet de instelling niet aan met {FOREIGN_KEYS_ON}"
-    assert sql.index(FOREIGN_KEYS_CHECK) < sql.index(FOREIGN_KEYS_ON) < sql.rindex(FOREIGN_KEYS_CHECK), (
-        f"{rel}: de controlecel hoort te controleren, aan te zetten en opnieuw te controleren:\n{sql}"
-    )
+    assert sql.count(FOREIGN_KEYS_CHECK) == 1, f"{rel}: de cel hoort één keer te controleren:\n{sql}"
     text = source_of(rel)
-    assert re.search(
-        r"opnieuw\b.{0,160}`PRAGMA foreign_keys = ON;`|`PRAGMA foreign_keys = ON;`.{0,160}\bopnieuw\b",
-        text,
-        flags=re.DOTALL,
-    ), f"{rel}: legt niet uit dat je {FOREIGN_KEYS_ON} na het heropenen van de pagina opnieuw uitvoert"
-    assert "Reset db" in text, f"{rel}: noemt Reset db niet (zet de instelling ook uit)"
+    assert re.search(r"buiten\b", text), f"{rel}: zegt niet wat er buiten deze site anders is"
+    assert FOREIGN_KEYS_ON in text, f"{rel}: zegt niet hoe je de bewaking daar aanzet ({FOREIGN_KEYS_ON})"
+
+
+def test_sql_cell_foreign_keys_reference_existing_columns() -> None:
+    """Issue #46: nu de editor foreign keys bewaakt, weigert SQLite een INSERT
+    in een tabel waarvan een FOREIGN KEY naar een onbestaande kolom verwijst
+    ("foreign key mismatch") — met de bewaking uit bleef zo'n schrijffout
+    onzichtbaar. Elke REFERENCES in een sql-live-cel moet dus wijzen naar een
+    kolom die bestaat: in de seed van de pagina, of in een tabel die de pagina
+    zelf aanmaakt. Tabellen die de leerling zelf schrijft (de opdrachtcellen
+    van hoofdstuk 4 en 5 staan leeg) staan hier niet, en zijn niet te
+    controleren; wat wél te controleren valt, moet kloppen."""
+    reference = re.compile(r"\bREFERENCES\s+(\w+)\s*\(\s*(\w+)\s*\)", flags=re.IGNORECASE)
+    create_table = re.compile(r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", flags=re.IGNORECASE)
+    problems = []
+    checked = set()
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            columns = _columns_of_the_page(rel, create_table)
+            for n, sql in enumerate(code_cells_tagged(rel, "sql-live"), 1):
+                for table, column in reference.findall(sql):
+                    if table not in columns:
+                        continue  # tabel van de leerling zelf: niet na te gaan
+                    checked.add(rel)
+                    if column not in columns[table]:
+                        problems.append(
+                            f"{rel}: sql-live-cel {n}: REFERENCES {table}({column}) — "
+                            f"{table} heeft geen kolom {column} (wel: {', '.join(columns[table])})"
+                        )
+    assert not problems, "foreign keys die nergens naar wijzen:\n" + "\n".join(problems)
+    # Waar de test voor bestaat: het normalisatiehoofdstuk bouwt zijn tabellen
+    # in de cellen zelf, dus daar is elke REFERENCES na te gaan.
+    assert "chapters/ERD/02_normalisatie" in checked, f"er is niets nagekeken: {checked}"
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:

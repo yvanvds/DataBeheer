@@ -27,10 +27,19 @@
 // verouderde kopie van de seed bewaard. Ook na een fout wordt gecontroleerd:
 // in een script kunnen de statements vóór de fout al uitgevoerd zijn.
 //
+// Foreign keys (#46): sql.js start, net als SQLite zelf, met de bewaking van
+// foreign keys uit. De cursus zet ze aan, en niet in de lessen maar hier:
+// openDatabase() voert `PRAGMA foreign_keys = ON` uit bij elke init en reset,
+// op elke pagina — met seed, hersteld uit IndexedDB én leeg. De lessen hoeven
+// er dus niet meer aan te herinneren; hun `PRAGMA foreign_keys;`-cellen zijn
+// een controle geworden. Buiten deze site (sqlite3-CLI, DB Browser) staat de
+// bewaking niet vanzelf aan; dat vertellen de lessen wél.
+//
 // Let op: db.export() sluit in sql.js de verbinding en opent ze opnieuw, dus
 // verbindingsinstellingen gaan daarbij verloren. PRAGMA foreign_keys wordt
-// na een export teruggezet, omdat de ERD-lessen erop steunen. Tijdelijke
-// tabellen en een open transactie over cellen heen overleven een export niet.
+// na een export teruggezet zoals ze stond — aan (het normale geval), of uit
+// als een leerling ze zelf uitzette. Tijdelijke tabellen en een open
+// transactie over cellen heen overleven een export niet.
 const WORKER_BASE = self.location.pathname.replace(/\/[^\/]*$/, ''); // bv. /DataBeheer/_static
 importScripts(WORKER_BASE + '/sqljs/sql-wasm.js');
 
@@ -102,6 +111,10 @@ function openDatabase(id, payload) {
       ? new SQL.Database(new Uint8Array(payload.seedBuf))
       : new SQL.Database(); // pagina zonder sql-db-cel: lege startdatabank
   }
+  // Elke verse verbinding begint met de bewaking van foreign keys aan (#46).
+  // Verandert niets aan schema_version of total_changes, dus de stamp
+  // hieronder blijft een eerlijke nulmeting.
+  db.exec('PRAGMA foreign_keys = ON;');
   sessions.set(id, { db, stamp: changeStamp(db) });
   return { restored, savedRejected };
 }
