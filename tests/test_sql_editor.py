@@ -9,8 +9,9 @@ op de site (issue #42). De controlecel voor PRAGMA foreign_keys in ERD
 hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue
 #43). De editor zet die bewaking zelf aan bij het openen van elke sessie, op
 elke pagina en ook na Reset db, zodat de lessen er niet meer aan hoeven te
-herinneren (issue #46). Op een klein leerlingenscherm laat "Groot scherm" één
-cel de hele viewport vullen (issue #48).
+herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
+tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
+laat "Groot scherm" één cel de hele viewport vullen (issue #48).
 
 Twee lagen:
 
@@ -1022,13 +1023,15 @@ def test_erd_intro_foreign_keys_cell_runs_without_syntax_error(page, site_url) -
         context.close()
 
 
-# --- e2e: het normalisatiehoofdstuk met foreign keys aan (#46) ---------------
+# --- e2e: het normalisatiehoofdstuk (#46, #49) ------------------------------
 
 # ERD hoofdstuk 2 bouwt uit de "brede" tabel orders_wide (seed webshop_bad.db)
 # vier genormaliseerde tabellen. De foreign key van orders verwees naar
 # customers(id) — een kolom die die tabel niet heeft; ze heet customer_id. Met
 # de bewaking uit bleef dat onzichtbaar, met de bewaking aan weigert SQLite de
-# INSERT met "foreign key mismatch". De les moet dus blijven lopen.
+# INSERT met "foreign key mismatch" (#46). En §5.2 vulde de koppeltabel met
+# `ow.price`, terwijl orders_wide die kolom `unit_price` noemt (#49). De les
+# moet van begin tot eind blijven lopen; niets draaide ze tot nu toe uit.
 NORMALISATIE_PAGE = "chapters/ERD/02_normalisatie.html"
 
 # De werkende variant van 3.2, die de les zelf in commentaar meegeeft: de
@@ -1043,30 +1046,69 @@ GROUP BY product_sku;
 """
 
 
-def test_normalisation_lesson_builds_its_tables_with_foreign_keys_on(page, site_url) -> None:
-    """Stap 3 en 4 van hoofdstuk 2 op de site-editor, met de startcode van de
+def build_customers_products_and_orders(fresh) -> None:
+    """Stap 2 tot 4 van hoofdstuk 2 op de site-editor, met de startcode van de
     cellen zelf: de klanten- en productentabel vullen (de eerste poging bij de
     producten hoort te falen), en dan de orders-tabel aanmaken en vullen. Die
-    laatste INSERT is de reden van deze test — ze loopt alleen als de foreign
-    key van orders naar een bestaande kolom van customers wijst."""
+    laatste INSERT loopt alleen als de foreign key van orders naar een
+    bestaande kolom van customers wijst (#46)."""
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE customers ("))).to_contain_text("OK")
+    expect(run_cell(fresh, find_cell(fresh, "INSERT INTO customers (email, name, city, postcode)"))).not_to_contain_text("Fout:")
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE products ("))).to_contain_text("OK")
+
+    products = find_cell(fresh, "INSERT INTO products (sku, name)")
+    expect(run_cell(fresh, products)).to_contain_text("UNIQUE constraint failed")  # het punt van 3.2
+    expect(run_cell(fresh, products, PRODUCTS_PER_SKU)).to_contain_text("OK")
+
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE orders ("))).to_contain_text("OK")
+    orders = run_cell(fresh, find_cell(fresh, "INSERT INTO orders (order_date, customer_id)"))
+    expect(orders).not_to_contain_text("foreign key mismatch")
+    expect(orders).to_contain_text("OK")
+
+
+def test_normalisation_lesson_builds_its_tables_with_foreign_keys_on(page, site_url) -> None:
+    """Stap 3 en 4 van hoofdstuk 2 op de site-editor. De INSERT in orders is de
+    reden van deze test — ze loopt alleen als de foreign key van orders naar
+    een bestaande kolom van customers wijst."""
     context, fresh = open_fresh(page, site_url, NORMALISATIE_PAGE)
     try:
-        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE customers ("))).to_contain_text("OK")
-        expect(run_cell(fresh, find_cell(fresh, "INSERT INTO customers (email, name, city, postcode)"))).not_to_contain_text("Fout:")
-        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE products ("))).to_contain_text("OK")
-
-        products = find_cell(fresh, "INSERT INTO products (sku, name)")
-        expect(run_cell(fresh, products)).to_contain_text("UNIQUE constraint failed")  # het punt van 3.2
-        expect(run_cell(fresh, products, PRODUCTS_PER_SKU)).to_contain_text("OK")
-
-        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE orders ("))).to_contain_text("OK")
-        orders = run_cell(fresh, find_cell(fresh, "INSERT INTO orders (order_date, customer_id)"))
-        expect(orders).not_to_contain_text("foreign key mismatch")
-        expect(orders).to_contain_text("OK")
-
+        build_customers_products_and_orders(fresh)
         control = run_cell(fresh, find_cell(fresh, "SELECT * FROM orders;"))
         expect(control.locator("tbody tr")).to_have_count(4)
         expect(control.locator("span.sql-null")).to_have_count(0)  # elke bestelling heeft een klant
+    finally:
+        context.close()
+
+
+# De prijzen van de vijf regels van orders_wide, in de volgorde waarin de
+# INSERT van §5.2 ze in order_items schrijft. Ze staan hier voluit omdat net
+# die kolom fout gelezen werd: een lege of verschoven kolom valt zo op.
+ORDER_ITEM_PRICES = ["199.99", "12.5", "59", "69", "129.95"]
+
+
+def test_normalisation_lesson_fills_order_items_from_the_wide_table(page, site_url) -> None:
+    """Issue #49: stap 5 van hoofdstuk 2 op de site-editor. De INSERT van §5.2
+    las `ow.price` uit orders_wide, maar die tabel noemt de prijskolom
+    `unit_price` (`price` is de kolom in order_items zelf). De cel eindigde dus
+    altijd op "no such column: ow.price": de controle in 5.3 bleef leeg en stap
+    6 toonde een order_items zonder rijen. Met de juiste kolom loopt de reeks
+    door tot het einde — vijf orderregels, met de prijzen uit de brede tabel."""
+    context, fresh = open_fresh(page, site_url, NORMALISATIE_PAGE)
+    try:
+        build_customers_products_and_orders(fresh)
+        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE order_items ("))).to_contain_text("OK")
+
+        insert = find_cell(fresh, "INSERT INTO order_items (order_id, product_sku, quantity, price)")
+        filled = run_cell(fresh, insert)
+        expect(filled).not_to_contain_text("no such column")
+        expect(filled).not_to_contain_text("Fout:")
+        expect(filled).to_contain_text("OK")
+
+        control = run_cell(fresh, find_cell(fresh, "SELECT * FROM order_items;"))
+        expect(control.locator("th")).to_have_text(["order_id", "product_sku", "quantity", "price"])
+        expect(control.locator("tbody tr")).to_have_count(5)
+        expect(control.locator("tbody tr td:nth-child(4)")).to_have_text(ORDER_ITEM_PRICES)
+        expect(control.locator("span.sql-null")).to_have_count(0)
     finally:
         context.close()
 

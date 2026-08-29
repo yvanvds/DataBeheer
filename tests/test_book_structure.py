@@ -2,7 +2,8 @@
 de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
 het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
 interactieve cellen (issue #43), de foreign keys die de site-editor zelf
-aanzet (issue #46), de knop die een cel schermvullend maakt (issue #48)
+aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
+(issue #49), de knop die een cel schermvullend maakt (issue #48)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -395,6 +396,45 @@ def _create_table_statements(sql: str, create_table: re.Pattern) -> list[str]:
     return [s for s in (part.strip() for part in sql.split(";")) if create_table.match(s)]
 
 
+# Gekwalificeerde kolomverwijzingen in de lescellen (issue #49): in ERD
+# hoofdstuk 2 vulde §5.2 de koppeltabel met `ow.price`, maar de brede tabel
+# orders_wide heeft die kolom niet — ze heet `unit_price` (`price` is wel de
+# kolom in order_items zelf). De cel eindigde dus altijd op "no such column",
+# waardoor stap 5 en 6 van de les leeg bleven. Anders dan een verkeerde
+# foreign key valt dit al op te sporen zonder de cel te draaien: als een
+# statement zijn bron als `FROM orders_wide ow` binnenhaalt, moet elke
+# `ow.<kolom>` een kolom van orders_wide zijn.
+SQL_LINE_COMMENT = re.compile(r"--[^\n]*")
+SQL_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
+SQL_STRING = re.compile(r"'[^']*'")
+SQL_SOURCE = re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)\s*(?:\bAS\s+)?([A-Za-z_]\w*)?", flags=re.IGNORECASE)
+SQL_QUALIFIED = re.compile(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b")
+
+# Woorden die na een tabelnaam kunnen staan zonder een alias te zijn.
+NOT_AN_ALIAS = frozenset("""
+    as on where group order having limit join inner left right full outer cross
+    natural using union select and or not set values when then else end by
+""".split())
+
+
+def sql_statements(sql: str) -> list[str]:
+    """De statements van een cel, zonder commentaar en met de stringliteralen
+    leeggemaakt. De cellen in dit boek gebruiken geen `;` in strings."""
+    bare = SQL_STRING.sub("''", SQL_BLOCK_COMMENT.sub(" ", SQL_LINE_COMMENT.sub("", sql)))
+    return [s.strip() for s in bare.split(";") if s.strip()]
+
+
+def sql_sources(statement: str) -> dict[str, str]:
+    """{kwalificatie: tabelnaam} van elke FROM/JOIN-bron van een statement — de
+    tabelnaam zelf en, als die er is, de alias erachter."""
+    sources: dict[str, str] = {}
+    for table, alias in SQL_SOURCE.findall(statement):
+        sources[table.lower()] = table
+        if alias and alias.lower() not in NOT_AN_ALIAS:
+            sources[alias.lower()] = table
+    return sources
+
+
 def article_html(rel: str) -> str:
     """Alleen de inhoud van een gebouwde pagina (zonder zijbalk, prev/next en de rest van het thema)."""
     m = re.search(r"<article[^>]*>(.*?)</article>", page_html(rel), flags=re.DOTALL)
@@ -669,6 +709,42 @@ def test_sql_cell_foreign_keys_reference_existing_columns() -> None:
     assert not problems, "foreign keys die nergens naar wijzen:\n" + "\n".join(problems)
     # Waar de test voor bestaat: het normalisatiehoofdstuk bouwt zijn tabellen
     # in de cellen zelf, dus daar is elke REFERENCES na te gaan.
+    assert "chapters/ERD/02_normalisatie" in checked, f"er is niets nagekeken: {checked}"
+
+
+def test_sql_cell_columns_exist_in_the_table_they_are_read_from() -> None:
+    """Issue #49: §5.2 van het normalisatiehoofdstuk las `ow.price` uit
+    orders_wide, een kolom die die tabel niet heeft (`unit_price` wel). De cel
+    gaf alleen maar "no such column", zodat de koppeltabel leeg bleef en stap 6
+    een lege order_items toonde. Elke `<bron>.<kolom>` in een sql-live-cel moet
+    dus een kolom zijn van de tabel waar die bron vandaan komt. Bronnen die
+    hier niet na te gaan zijn (een subquery, een CTE, of een tabel die de
+    leerling zelf nog moet schrijven) blijven buiten beschouwing; wat wél na te
+    gaan valt, moet kloppen."""
+    create_table = re.compile(r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", flags=re.IGNORECASE)
+    problems = []
+    checked = set()
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            columns = _columns_of_the_page(rel, create_table)
+            for n, sql in enumerate(code_cells_tagged(rel, "sql-live"), 1):
+                for statement in sql_statements(sql):
+                    sources = sql_sources(statement)
+                    for qualifier, column in SQL_QUALIFIED.findall(statement):
+                        table = sources.get(qualifier.lower())
+                        if table is None or table not in columns:
+                            continue  # geen bron van dit statement, of een tabel van de leerling
+                        checked.add(rel)
+                        if column.lower() not in {c.lower() for c in columns[table]}:
+                            problems.append(
+                                f"{rel}: sql-live-cel {n}: {qualifier}.{column} — "
+                                f"{table} heeft geen kolom {column} (wel: {', '.join(columns[table])})"
+                            )
+    assert not problems, "kolommen die niet bestaan in de tabel waaruit ze gelezen worden:\n" + "\n".join(problems)
+    # Waar de test voor bestaat: het normalisatiehoofdstuk bouwt zijn tabellen
+    # in de cellen zelf en leest met aliassen uit de seed, dus daar is elke
+    # verwijzing na te gaan.
     assert "chapters/ERD/02_normalisatie" in checked, f"er is niets nagekeken: {checked}"
 
 
