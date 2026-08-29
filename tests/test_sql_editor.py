@@ -6,7 +6,12 @@ een pagina blijft in de browser bewaard (IndexedDB) en is met "Download mijn
 databank" als .db-bestand te downloaden (issue #41). Daarop draaien de
 bouwlessen van het ERD-deel (hoofdstuk 4 en 5, pagina's zonder seed) volledig
 op de site (issue #42). De controlecel voor PRAGMA foreign_keys in ERD
-hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue #43).
+hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue
+#43). De editor zet die bewaking zelf aan bij het openen van elke sessie, op
+elke pagina en ook na Reset db, zodat de lessen er niet meer aan hoeven te
+herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
+tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
+laat "Groot scherm" één cel de hele viewport vullen (issue #48).
 
 Twee lagen:
 
@@ -564,12 +569,9 @@ def test_select_only_work_saves_no_copy_of_the_database(page) -> None:
 
 
 def test_foreign_keys_setting_survives_saving_the_database(page) -> None:
-    """PRAGMA foreign_keys = ON (ERD-hoofdstuk 1) is een instelling van de
-    verbinding. Het bewaren van een snapshot sluit en heropent die verbinding
-    (zo werkt db.export() in sql.js) en mag de instelling niet stilletjes
-    uitzetten."""
-    run_all(page, "PRAGMA foreign_keys = ON;")
-    expect(output(page)).to_contain_text("OK")
+    """De bewaking van foreign keys is een instelling van de verbinding. Het
+    bewaren van een snapshot sluit en heropent die verbinding (zo werkt
+    db.export() in sql.js) en mag de instelling niet stilletjes uitzetten."""
     run_all(page, "CREATE TABLE fk_test (id INTEGER PRIMARY KEY);")  # wijziging → snapshot
     expect(output(page)).to_contain_text("OK")
     expect(db_badge(page)).to_be_visible()
@@ -577,9 +579,66 @@ def test_foreign_keys_setting_survives_saving_the_database(page) -> None:
     expect(result_headers(page)).to_have_text(["foreign_keys"])
     expect(output(page).locator("td")).to_have_text(["1"])
 
+    # Zet een leerling ze zelf uit, dan blijft dat zo over een snapshot heen.
+    run_all(page, "PRAGMA foreign_keys = OFF;\nCREATE TABLE fk_test_uit (id INTEGER PRIMARY KEY);")
+    expect(output(page)).to_contain_text("OK")
+    run_all(page, "PRAGMA foreign_keys;")
+    expect(output(page).locator("td")).to_have_text(["0"])
+
     cell(page).locator("button.reset").click()  # opruimen voor de volgende tests
     wait_ready(page)
     wait_db_saved(page, False)
+
+
+def foreign_keys_are_on(target) -> None:
+    """`PRAGMA foreign_keys;` in de eerste cel geeft 1 (de bewaking staat aan)."""
+    run_all(target, FOREIGN_KEYS_CHECK)
+    expect(result_headers(target)).to_have_text(["foreign_keys"])
+    expect(output(target).locator("td")).to_have_text(["1"])
+
+
+def test_foreign_keys_are_on_from_the_start_on_every_page(page, site_url) -> None:
+    """Issue #46: de editor voert `PRAGMA foreign_keys = ON` zelf uit bij het
+    openen van elke sessie, zodat de lessen er niet meer aan hoeven te
+    herinneren. Op een vers geopende pagina (seed), na een herlaad (hersteld
+    uit IndexedDB) en na Reset db geeft `PRAGMA foreign_keys;` dus `1` — en
+    webshop.db weigert dan een bestelling voor een klant die niet bestaat, met
+    een leesbare fout."""
+    context, fresh = open_fresh(page, site_url, PAGE)
+    try:
+        foreign_keys_are_on(fresh)  # vers geopend, met seed
+
+        # De bewaking doet ook echt haar werk: orders.customer_id verwijst naar customers.
+        run_all(fresh, "INSERT INTO orders (customer_id, order_date, status) VALUES (999999, '2026-02-02', 'open');")
+        expect(output(fresh)).to_contain_text("FOREIGN KEY constraint failed")
+
+        run_all(fresh, "CREATE TABLE fk_bewaard (id INTEGER PRIMARY KEY);")  # eigen werk → wordt bewaard
+        expect(output(fresh)).to_contain_text("OK")
+        wait_db_saved(fresh, True)
+        reload(fresh)
+        expect(db_badge(fresh)).to_be_visible()  # hersteld uit IndexedDB, niet opnieuw geseed
+        foreign_keys_are_on(fresh)
+
+        cell(fresh).locator("button.reset").click()
+        wait_ready(fresh)
+        wait_db_saved(fresh, False)
+        expect(db_badge(fresh)).to_be_hidden()
+        foreign_keys_are_on(fresh)  # ook na Reset db
+    finally:
+        context.close()
+
+
+def test_foreign_keys_are_on_when_the_page_has_no_seed(page, no_seed_page_url) -> None:
+    """Issue #46: ook op een pagina zonder sql-db-cel — de lege startdatabank
+    van de bouwlessen in het ERD-deel — staat de bewaking meteen aan."""
+    context = page.context.browser.new_context()
+    empty = context.new_page()
+    try:
+        empty.goto(no_seed_page_url)
+        wait_ready(empty)
+        foreign_keys_are_on(empty)
+    finally:
+        context.close()
 
 
 def test_editor_and_download_work_when_indexeddb_is_blocked(page, site_url, tmp_path) -> None:
@@ -819,14 +878,15 @@ def test_voetbal_page_starts_empty_keeps_what_you_build_and_exports_it(page, sit
 def test_cafetaria_lesson_runs_end_to_end_on_the_site_editor(page, site_url, tmp_path) -> None:
     """Hoofdstuk 5 van fase 4 tot 7 op de site-editor: zonder constraints →
     met constraints → met foreign keys, met de startcode van de cellen zelf.
-    Onderweg: de databank overleeft een herlaad, PRAGMA foreign_keys = ON
-    werkt in een cel, en de download is het volledige SQLite-bestand."""
+    Onderweg: de databank overleeft een herlaad, de controlecellen van 6.2 en
+    7.0 bevestigen dat de editor foreign keys aan zette (#46), en de download
+    is het volledige SQLite-bestand."""
     context, fresh = open_fresh(page, site_url, CAFETARIA_PAGE)
     try:
         task1 = find_cell(fresh, CAFETARIA_TASK_1)
         task2 = find_cell(fresh, CAFETARIA_TASK_2)
-        pragma = find_cell(fresh, "PRAGMA foreign_keys = ON;")
-        pragma_again = find_cell(fresh, "-- Fase 7: eerst foreign keys aan")
+        pragma = find_cell(fresh, FOREIGN_KEYS_CHECK)  # 6.2, de controlecel
+        pragma_again = find_cell(fresh, "-- Fase 7: controle vooraf")
         assert task1 < task2 < pragma < pragma_again
         last = len(initial_values(fresh)) - 1
 
@@ -872,7 +932,7 @@ def test_cafetaria_lesson_runs_end_to_end_on_the_site_editor(page, site_url, tmp
         receipt = run_cell(fresh, find_cell(fresh, "-- 5.5"))
         expect(receipt.locator("span.sql-null")).not_to_have_count(0)  # leerling 999 en product 99 bestaan niet
 
-        # Fase 6 — foreign keys: de PRAGMA werkt in een cel, en de verwijzingen worden bewaakt.
+        # Fase 6 — foreign keys: de controlecel bevestigt dat ze aan staan, en de verwijzingen worden bewaakt.
         expect(run_cell(fresh, pragma).locator("td")).to_have_text(["1"])
         expect(run_cell(fresh, find_cell(fresh, "DROP TABLE bestelling_lijnen;\nDROP TABLE bestellingen;", exact=True))).to_contain_text("OK")
         expect(run_cell(fresh, find_cell(fresh, "ON DELETE CASCADE"))).to_contain_text("OK")
@@ -923,13 +983,13 @@ def test_cafetaria_lesson_runs_end_to_end_on_the_site_editor(page, site_url, tmp
         context.close()
 
 
-# --- e2e: de foreign_keys-controle in ERD hoofdstuk 1 (#43) -----------------
+# --- e2e: de foreign_keys-controle in ERD hoofdstuk 1 (#43, #46) ------------
 
 # Hoofdstuk 1 bevraagt webshop.db (pagina mét seed). De cel bij §5 controleert
-# PRAGMA foreign_keys, zet de instelling aan zoals hoofdstuk 5 (6.2) en
-# controleert opnieuw. Ze bevatte `#`-commentaar, dat SQLite niet kent: met
+# PRAGMA foreign_keys. Ze bevatte `#`-commentaar, dat SQLite niet kent: met
 # "Run alles" (en met Run zodra de cursor op zo'n regel stond) gaf sql.js een
-# syntaxfout.
+# syntaxfout (#43). Sinds #46 zet de editor de bewaking zelf aan: de cel is
+# een controle die meteen 1 geeft, en de instructie eromheen is weg.
 ERD_INTRO_PAGE = "chapters/ERD/01_Inleiding_tot_ERD.html"
 FOREIGN_KEYS_CHECK = "PRAGMA foreign_keys;"
 FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON;"
@@ -942,25 +1002,270 @@ def run_at_line(page, index: int, needle) -> None:
 
 
 def test_erd_intro_foreign_keys_cell_runs_without_syntax_error(page, site_url) -> None:
-    """Op een vers geopende pagina staat de instelling uit: "Run alles" laat
-    0, dan 1 zien, zonder fout. Daarna regel per regel met Run — ook met de
-    cursor op een commentaarregel, die bij het statement erna hoort."""
+    """Op een vers geopende pagina geeft de controlecel meteen 1, zonder fout
+    — met "Run alles" en met Run, ook met de cursor op de commentaarregel, die
+    bij het statement erna hoort. De cel zet de instelling niet meer zelf aan."""
     context, fresh = open_fresh(page, site_url, ERD_INTRO_PAGE)
     try:
         index = find_cell(fresh, FOREIGN_KEYS_CHECK)
-        assert FOREIGN_KEYS_ON in initial_values(fresh)[index]
+        assert FOREIGN_KEYS_ON not in initial_values(fresh)[index]  # #46: alleen nog een controle
         out = run_cell(fresh, index)
         expect(out).not_to_contain_text("Fout:")
-        expect(out.locator("th")).to_have_text(["foreign_keys", "foreign_keys"])
-        expect(out.locator("td")).to_have_text(["0", "1"])  # uit → aan
+        expect(out.locator("th")).to_have_text(["foreign_keys"])
+        expect(out.locator("td")).to_have_text(["1"])  # de editor zette ze aan
 
-        run_at_line(fresh, index, re.compile(r"^PRAGMA foreign_keys;$"))  # de eerste controle, nu al aan
+        run_at_line(fresh, index, re.compile(r"^PRAGMA foreign_keys;$"))
         expect(out.locator("td")).to_have_text(["1"])
-        run_at_line(fresh, index, "Zet ze aan")  # commentaarregel: Run voert het statement erna uit
-        expect(out).to_contain_text("OK")
-        expect(out.locator("th")).to_have_count(0)
-        run_at_line(fresh, index, "controle: 1 betekent aan")
+        run_at_line(fresh, index, "1 = aan, 0 = uit")  # commentaarregel: Run voert het statement erna uit
         expect(out.locator("td")).to_have_text(["1"])
         expect(out).not_to_contain_text("Fout:")
     finally:
         context.close()
+
+
+# --- e2e: het normalisatiehoofdstuk (#46, #49) ------------------------------
+
+# ERD hoofdstuk 2 bouwt uit de "brede" tabel orders_wide (seed webshop_bad.db)
+# vier genormaliseerde tabellen. De foreign key van orders verwees naar
+# customers(id) — een kolom die die tabel niet heeft; ze heet customer_id. Met
+# de bewaking uit bleef dat onzichtbaar, met de bewaking aan weigert SQLite de
+# INSERT met "foreign key mismatch" (#46). En §5.2 vulde de koppeltabel met
+# `ow.price`, terwijl orders_wide die kolom `unit_price` noemt (#49). De les
+# moet van begin tot eind blijven lopen; niets draaide ze tot nu toe uit.
+NORMALISATIE_PAGE = "chapters/ERD/02_normalisatie.html"
+
+# De werkende variant van 3.2, die de les zelf in commentaar meegeeft: de
+# eerste poging (DISTINCT sku, name) botst op de UNIQUE-constraint — dat is
+# het didactische punt van die paragraaf.
+PRODUCTS_PER_SKU = """\
+INSERT INTO products (sku, name)
+SELECT product_sku,
+       MIN(product_name) AS name
+FROM orders_wide
+GROUP BY product_sku;
+"""
+
+
+def build_customers_products_and_orders(fresh) -> None:
+    """Stap 2 tot 4 van hoofdstuk 2 op de site-editor, met de startcode van de
+    cellen zelf: de klanten- en productentabel vullen (de eerste poging bij de
+    producten hoort te falen), en dan de orders-tabel aanmaken en vullen. Die
+    laatste INSERT loopt alleen als de foreign key van orders naar een
+    bestaande kolom van customers wijst (#46)."""
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE customers ("))).to_contain_text("OK")
+    expect(run_cell(fresh, find_cell(fresh, "INSERT INTO customers (email, name, city, postcode)"))).not_to_contain_text("Fout:")
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE products ("))).to_contain_text("OK")
+
+    products = find_cell(fresh, "INSERT INTO products (sku, name)")
+    expect(run_cell(fresh, products)).to_contain_text("UNIQUE constraint failed")  # het punt van 3.2
+    expect(run_cell(fresh, products, PRODUCTS_PER_SKU)).to_contain_text("OK")
+
+    expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE orders ("))).to_contain_text("OK")
+    orders = run_cell(fresh, find_cell(fresh, "INSERT INTO orders (order_date, customer_id)"))
+    expect(orders).not_to_contain_text("foreign key mismatch")
+    expect(orders).to_contain_text("OK")
+
+
+def test_normalisation_lesson_builds_its_tables_with_foreign_keys_on(page, site_url) -> None:
+    """Stap 3 en 4 van hoofdstuk 2 op de site-editor. De INSERT in orders is de
+    reden van deze test — ze loopt alleen als de foreign key van orders naar
+    een bestaande kolom van customers wijst."""
+    context, fresh = open_fresh(page, site_url, NORMALISATIE_PAGE)
+    try:
+        build_customers_products_and_orders(fresh)
+        control = run_cell(fresh, find_cell(fresh, "SELECT * FROM orders;"))
+        expect(control.locator("tbody tr")).to_have_count(4)
+        expect(control.locator("span.sql-null")).to_have_count(0)  # elke bestelling heeft een klant
+    finally:
+        context.close()
+
+
+# De prijzen van de vijf regels van orders_wide, in de volgorde waarin de
+# INSERT van §5.2 ze in order_items schrijft. Ze staan hier voluit omdat net
+# die kolom fout gelezen werd: een lege of verschoven kolom valt zo op.
+ORDER_ITEM_PRICES = ["199.99", "12.5", "59", "69", "129.95"]
+
+
+def test_normalisation_lesson_fills_order_items_from_the_wide_table(page, site_url) -> None:
+    """Issue #49: stap 5 van hoofdstuk 2 op de site-editor. De INSERT van §5.2
+    las `ow.price` uit orders_wide, maar die tabel noemt de prijskolom
+    `unit_price` (`price` is de kolom in order_items zelf). De cel eindigde dus
+    altijd op "no such column: ow.price": de controle in 5.3 bleef leeg en stap
+    6 toonde een order_items zonder rijen. Met de juiste kolom loopt de reeks
+    door tot het einde — vijf orderregels, met de prijzen uit de brede tabel."""
+    context, fresh = open_fresh(page, site_url, NORMALISATIE_PAGE)
+    try:
+        build_customers_products_and_orders(fresh)
+        expect(run_cell(fresh, find_cell(fresh, "CREATE TABLE order_items ("))).to_contain_text("OK")
+
+        insert = find_cell(fresh, "INSERT INTO order_items (order_id, product_sku, quantity, price)")
+        filled = run_cell(fresh, insert)
+        expect(filled).not_to_contain_text("no such column")
+        expect(filled).not_to_contain_text("Fout:")
+        expect(filled).to_contain_text("OK")
+
+        control = run_cell(fresh, find_cell(fresh, "SELECT * FROM order_items;"))
+        expect(control.locator("th")).to_have_text(["order_id", "product_sku", "quantity", "price"])
+        expect(control.locator("tbody tr")).to_have_count(5)
+        expect(control.locator("tbody tr td:nth-child(4)")).to_have_text(ORDER_ITEM_PRICES)
+        expect(control.locator("span.sql-null")).to_have_count(0)
+    finally:
+        context.close()
+
+
+# --- e2e: schermvullende modus per cel (#48) --------------------------------
+
+# De laptops van de leerlingen hebben een klein scherm; op 1366×768 blijft er
+# tussen lestekst, sidebar en navigatie weinig over voor een langere query of
+# een brede resultaattabel. De knop "Groot scherm" laat één cel de hele
+# viewport vullen; de knop zelf of Esc brengt de gewone lay-out terug.
+LAPTOP = {"width": 1366, "height": 768}
+FULLSCREEN_BTN = "button.fullscreen"
+
+
+@pytest.fixture(scope="module")
+def laptop_page(page, site_url):
+    """De eerste SQL-pagina in een eigen context op laptopformaat (1366×768)."""
+    context = page.context.browser.new_context(viewport=LAPTOP)
+    laptop = context.new_page()
+    laptop.goto(site_url + PAGE)
+    wait_ready(laptop)
+    try:
+        yield laptop
+    finally:
+        context.close()
+
+
+def fullscreen_button(page, index: int = 0):
+    return cell_at(page, index).locator(FULLSCREEN_BTN)
+
+
+def box(locator) -> dict:
+    b = locator.bounding_box()
+    assert b is not None, "element is niet zichtbaar"
+    return b
+
+
+def page_scrolls(page) -> bool:
+    """Scrollt de pagina mee als de leerling het muiswiel gebruikt? Bewust met
+    een echte wielbeweging: `window.scrollTo` scrolt ook een pagina die met
+    `overflow: hidden` op slot staat. De muis staat boven de lestekst bovenaan
+    de pagina; in schermvullende stand ligt de cel daaroverheen."""
+    before = page.evaluate("() => window.scrollY")
+    page.evaluate("() => window.scrollTo(0, 0)")
+    page.mouse.move(LAPTOP["width"] // 2, 400)
+    page.mouse.wheel(0, 400)
+    page.wait_for_timeout(250)
+    moved = page.evaluate("() => window.scrollY") != 0
+    page.evaluate("y => window.scrollTo(0, y)", before)
+    return moved
+
+
+def test_every_cell_has_a_fullscreen_button(laptop_page) -> None:
+    """De knop staat in de balk van élke cel, naast Run / Run alles / Schema /
+    Reset db, en staat bij het openen van de pagina uit."""
+    cells = laptop_page.locator(".sql-live-wrap")
+    expect(laptop_page.locator(f".sql-live-toolbar {FULLSCREEN_BTN}")).to_have_count(cells.count())
+    btn = fullscreen_button(laptop_page)
+    expect(btn).to_have_text("Groot scherm")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+
+
+def test_fullscreen_fills_the_laptop_viewport_and_esc_restores(laptop_page) -> None:
+    """Het scenario van #48 op een leerlingenlaptop: klikken op "Groot scherm"
+    laat de cel de viewport vullen (editor én resultaatpaneel), Run werkt in
+    die stand gewoon, de pagina eronder scrollt niet mee, en Esc zet de
+    oorspronkelijke lay-out terug."""
+    laptop_page.evaluate("() => window.scrollTo(0, 0)")
+    wrap = cell(laptop_page)
+    editor = wrap.locator(".sql-live-editor")
+    normal, normal_editor = box(wrap), box(editor)
+    assert normal["height"] < LAPTOP["height"], normal  # tussen de lestekst: klein
+    assert page_scrolls(laptop_page), "de pagina scrolt normaal niet — test zegt niets"
+
+    fullscreen_button(laptop_page).click()
+
+    full = box(wrap)
+    assert (round(full["x"]), round(full["y"])) == (0, 0), full
+    assert (round(full["width"]), round(full["height"])) == (LAPTOP["width"], LAPTOP["height"]), full
+    # De editor krijgt de resterende hoogte (toolbar en resultaatpaneel eraf).
+    grown = box(editor)
+    assert grown["height"] > normal_editor["height"] + 100, (normal_editor, grown)
+    assert not page_scrolls(laptop_page), "de pagina achter de cel scrolt mee"
+
+    # De cursor staat in de editor, dus de sneltoetsen werken meteen.
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    load_sql(laptop_page, three_statements("groot"))
+    click_line(laptop_page, "SELECT 2")
+    laptop_page.keyboard.press("Control+Enter")
+    expect(result_headers(laptop_page)).to_have_text(["tweede_groot"])
+    cell(laptop_page).locator("button.runall").click()
+    expect(result_headers(laptop_page)).to_have_text(["eerste_groot", "tweede_groot", "derde_groot"])
+    assert (round(box(wrap)["width"]), round(box(wrap)["height"])) == (LAPTOP["width"], LAPTOP["height"])
+
+    laptop_page.keyboard.press("Escape")
+
+    # Terug in de lestekst: dezelfde plek en breedte als daarnet, en weer een
+    # gewone hoogte (het resultaatpaneel maakt de cel nu wel wat hoger).
+    back = box(wrap)
+    assert (round(back["x"]), round(back["width"])) == (round(normal["x"]), round(normal["width"])), back
+    assert back["height"] < LAPTOP["height"], back
+    assert page_scrolls(laptop_page), "de pagina scrolt na Esc niet opnieuw"
+    expect(fullscreen_button(laptop_page)).to_have_text("Groot scherm")
+
+
+def test_the_button_also_closes_and_the_result_panel_scrolls_on_its_own(laptop_page) -> None:
+    """Dezelfde knop sluit weer (label en aria-pressed schakelen mee), en een
+    lange resultaattabel scrollt in het paneel zelf zonder de pagina eronder
+    mee te nemen."""
+    laptop_page.evaluate("() => window.scrollTo(0, 0)")
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_text("Klein scherm")
+    expect(btn).to_have_attribute("aria-pressed", "true")
+
+    run_all(laptop_page, "SELECT name, unit_price FROM products;")  # 41 rijen
+    expect(result_headers(laptop_page)).to_have_text(["name", "unit_price"])
+    panel = output(laptop_page)
+    behind = laptop_page.evaluate("() => window.scrollY")
+    scrolled = panel.evaluate(
+        "el => { const room = el.scrollHeight - el.clientHeight; el.scrollTop = room; "
+        "return { room, top: el.scrollTop }; }"
+    )
+    assert scrolled["room"] > 0, "het resultaatpaneel is niet hoger dan zijn venster"
+    assert scrolled["top"] > 0, "het resultaatpaneel scrolt niet zelfstandig"
+    assert laptop_page.evaluate("() => window.scrollY") == behind, "de pagina eronder schoof mee"
+
+    btn.click()
+    expect(btn).to_have_text("Groot scherm")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+    assert round(box(cell(laptop_page))["height"]) < LAPTOP["height"]
+    assert page_scrolls(laptop_page)
+
+
+def test_schema_stays_reachable_and_esc_closes_it_before_the_fullscreen(laptop_page) -> None:
+    """In schermvullende stand blijft Schema bereikbaar: het overlay komt over
+    de cel heen. Esc sluit dan eerst het schema; pas de volgende Esc brengt de
+    gewone lay-out terug."""
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+
+    cell(laptop_page).locator("button.schema").click()
+    overlay = laptop_page.locator(".sql-schema-overlay")
+    expect(overlay).to_be_visible()
+    panel = overlay.locator(".sql-schema-panel")
+    middle = box(panel)
+    on_top = laptop_page.evaluate(
+        "([x, y]) => !!document.elementFromPoint(x, y).closest('.sql-schema-overlay')",
+        [round(middle["x"] + middle["width"] / 2), round(middle["y"] + middle["height"] / 2)],
+    )
+    assert on_top, "het schema-overlay ligt onder de schermvullende cel"
+
+    laptop_page.keyboard.press("Escape")
+    expect(overlay).to_be_hidden()
+    expect(btn).to_have_attribute("aria-pressed", "true")  # de cel blijft schermvullend
+
+    laptop_page.keyboard.press("Escape")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+    assert page_scrolls(laptop_page)
