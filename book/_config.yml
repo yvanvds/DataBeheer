@@ -28,6 +28,7 @@ sphinx:                                              # Options passed on to the 
     sanitize_static_assets: _ext                     # Voorkomt dubbele/foute scriptinjectie die consolefouten gaf (issue #24), zie _ext/sanitize_static_assets.py
     harden_theme_storage: _ext                       # Hardt de localStorage-toegang van de gevendorde theme-scripts (consolefouten bij eerste bezoek/geblokkeerde opslag, issues #29/#26), zie _ext/harden_theme_storage.py
     vendor_mathjax: _ext                             # Laadt MathJax uit de gevendorde kopie in _static/mathjax/ i.p.v. cdn.jsdelivr.net (issue #28), zie _ext/vendor_mathjax.py
+    sync_static_assets: _ext                         # Kopieert gewijzigde _static-bestanden ook bij een incrementele build (issue #54), zie _ext/sync_static_assets.py
   config:
     language: nl                                     # Defines language (English) of everything except the content itself. For Dutch: replace with `nl`, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     # Plink Labs huisstijl: de webfonts Fraunces / Hanken Grotesk / Space Mono
