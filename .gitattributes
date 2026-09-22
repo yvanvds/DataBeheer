@@ -1,0 +1,36 @@
+# Regeleindes: LF in de repo én in de werkmap, ook op Windows (issue #56).
+#
+# Zonder dit bestand herschrijft git met core.autocrlf=true bij elke checkout
+# op Windows de LF-bytes van tekstbestanden naar CRLF. In de geminifieerde
+# CodeMirror-bundel book/_static/codemirror/codemirror.js belanden die
+# \r-bytes niet op lege regels maar middenin stringliteralen -- onder meer in
+# de standaard regelscheider "\n" die CodeMirror zelf gebruikt. De editor die
+# lokaal getest wordt, is dan niet dezelfde code als die op GitHub Pages
+# staat. Met eol=lf is de werkmap byte voor byte gelijk aan wat er
+# gepubliceerd wordt, en klopt de bytevergelijking uit tests/conftest.py
+# (issue #54) ook na een branchwissel.
+* text=auto eol=lf
+
+# De gevendorde bundels worden byte voor byte geserveerd; git mag er nooit aan
+# raken, welke core.autocrlf-instelling een machine ook heeft.
+book/_static/codemirror/*.js    -text
+book/_static/mathjax/**         -text
+book/_static/sqljs/*            -text
+book/_static/tippy/*.js         -text
+
+# Binaire assets expliciet, zodat ze niet van gits automatische detectie
+# afhangen: de SQLite-seeddatabases, het Excel-werkblad, sql.js' wasm-module
+# en de webfonts.
+*.db        binary
+*.xlsx      binary
+*.wasm      binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.eot       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
