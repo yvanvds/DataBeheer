@@ -43,7 +43,7 @@ import {
   defaultKeymap, history, historyKeymap, indentWithTab,
   indentOnInput, bracketMatching, syntaxHighlighting, HighlightStyle,
   autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
-  sql, SQLite, tags,
+  sql, SQLiteCI, tags,
 } from './codemirror/codemirror.js';
 import { splitStatements, statementAt } from './sql-statements.js';
 import { buildQueriesFile, parseQueriesFile, pageName } from './sql-queries-file.js';
@@ -344,7 +344,10 @@ const plinkHighlight = HighlightStyle.define([
 let currentSchema = {};
 
 function makeSqlLang(schema) {
-  return sql({ dialect: SQLite, schema, upperCaseKeywords: true });
+  // SQLiteCI i.p.v. SQLite (#53): anders vult lang-sql elke naam met een
+  // hoofdletter aan tussen backticks (`Product`.`Name`). Zie het dialect in
+  // scripts/codemirror-entry.mjs.
+  return sql({ dialect: SQLiteCI, schema, upperCaseKeywords: true });
 }
 
 function applySchema(schema) {
@@ -900,6 +903,7 @@ onReady(async () => {
       staticBase: STATIC_BASE,
       get dbReady() { return dbReady; }, // o.a. voor de e2e-tests (tests/test_sql_editor.py)
       get dbSaved() { return dbSaved; }, // kopie van de databank staat in IndexedDB (#41)
+      get schema() { return currentSchema; }, // catalogus van de autocomplete (#53)
     };
     document.dispatchEvent(new CustomEvent('sql-live:ready', { detail: window.sqlLive }));
 

@@ -11,12 +11,15 @@ hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue
 elke pagina en ook na Reset db, zodat de lessen er niet meer aan hoeven te
 herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
 tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
-laat "Groot scherm" één cel de hele viewport vullen (issue #48).
+laat "Groot scherm" één cel de hele viewport vullen (issue #48). De
+autocomplete vult namen met hoofdletters (AdventureWorks) gewoon aan, zonder
+backticks eromheen (issue #53).
 
 Twee lagen:
 
 - de pure modules (statementgrenzen in book/_static/sql-statements.js, het
-  .sql-bestandsformaat in book/_static/sql-queries-file.js) hebben unit-tests
+  .sql-bestandsformaat in book/_static/sql-queries-file.js en het SQL-dialect
+  van de autocomplete in de gevendorde CodeMirror-bundel) hebben unit-tests
   in Node — tests/*.test.mjs — die hier via ``node --test`` draaien;
 - de e2e-tests openen de gebouwde site (book/_build/html) in een echte
   Chromium via Playwright en bedienen de editor zoals een leerling: klikken in
@@ -52,6 +55,7 @@ HTML = ROOT / "book" / "_build" / "html"
 NODE_TESTS = [
     ROOT / "tests" / "sql-statements.test.mjs",  # statementgrenzen (#34)
     ROOT / "tests" / "sql-queries-file.test.mjs",  # .sql-bestandsformaat van download/upload (#30/#35)
+    ROOT / "tests" / "sql-autocomplete.test.mjs",  # aanhalingstekens in de autocomplete (#53)
 ]
 
 # Eerste pagina met interactieve cellen (tag sql-live) en een seed-database.
@@ -1269,3 +1273,53 @@ def test_schema_stays_reachable_and_esc_closes_it_before_the_fullscreen(laptop_p
     laptop_page.keyboard.press("Escape")
     expect(btn).to_have_attribute("aria-pressed", "false")
     assert page_scrolls(laptop_page)
+
+
+# --- e2e: autocomplete zonder aanhalingstekens (#53) -------------------------
+
+ADVENTUREWORKS_PAGE = "chapters/SQL/01b_AdventureWorks.html"
+
+
+def wait_for_catalog(page, table: str) -> None:
+    """De autocomplete kent het schema pas als de worker de catalogus stuurde."""
+    page.wait_for_function("table => !!(window.sqlLive.schema || {})[table]", arg=table)
+
+
+def suggestion(page, label: str):
+    """Het voorstel met precies dit label in de open completionlijst."""
+    return page.locator(".cm-tooltip-autocomplete li .cm-completionLabel").filter(
+        has_text=re.compile(rf"^{re.escape(label)}$")
+    )
+
+
+def complete(page, index: int, start: str, typed: str, label: str) -> str:
+    """Zoals een leerling: cursor achter `start`, `typed` tikken en het voorstel
+    `label` uit de lijst aanklikken. Geeft de celinhoud daarna terug."""
+    set_editor(page, index, start)
+    cell_at(page, index).locator(".cm-line", has_text=start.strip()).click()
+    page.keyboard.press("End")
+    page.keyboard.type(typed)
+    option = suggestion(page, label)
+    expect(option).to_be_visible()
+    option.click()
+    return editor_values(page)[index]
+
+
+def test_autocomplete_completes_adventureworks_names_without_backticks(page, site_url) -> None:
+    """Het probleem uit #53: op de AdventureWorks-pagina's vulde de autocomplete
+    `Product`.`Name` in (backticks) in plaats van Product.Name. De namen van de
+    webshop (kleine letters) hadden er nooit last van."""
+    context, fresh = open_fresh(page, site_url, ADVENTUREWORKS_PAGE)
+    try:
+        wait_for_catalog(fresh, "Product")
+
+        table = complete(fresh, 0, "SELECT * FROM ", "Produ", "Product")
+        assert table == "SELECT * FROM Product", table
+
+        column = complete(fresh, 0, "SELECT Product", ".", "Name")
+        assert column == "SELECT Product.Name", column
+
+        # En de aangevulde query draait ook echt.
+        expect(run_cell(fresh, 0, "SELECT Product.Name FROM Product;")).to_contain_text("Name")
+    finally:
+        context.close()
