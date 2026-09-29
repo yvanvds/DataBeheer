@@ -24,9 +24,14 @@ book/overhoringen/
 │   └── overhoring.ipynb      de template, en de testpagina van de drie vraagtypes
 └── <naam>/                   één map per overhoring, <naam> is een slug (bv. sql-h1-h2)
     ├── overhoring.ipynb      de overhoring
-    ├── leerdoelen.md         voor de leraar (geen pagina)
-    └── rubriek.csv           voor Teams (geen pagina)
+    ├── leerdoelen.md         voor de leraar (geen pagina), gemaakt met /leerdoelen
+    └── rubriek.csv           voor Teams (geen pagina), gemaakt met /rubriek
 ```
+
+De formaten van `leerdoelen.md` en `rubriek.csv` staan in de skills
+`.claude/skills/leerdoelen/SKILL.md` en `.claude/skills/rubriek/SKILL.md`
+(issue #62); `.claude/skills/rubriek/check_rubriek.py` controleert een rubriek
+voor ze naar Teams gaat.
 
 - **Welke bestanden een pagina worden:** elke notebook (`*.ipynb`) rechtstreeks
   in `book/overhoringen/<naam>/`. Al de rest (`leerdoelen.md`, `rubriek.csv`,
