@@ -47,7 +47,7 @@ De cellen, van boven naar onder:
 
 | cel | soort | inhoud |
 |---|---|---|
-| databank | code, tag `sql-db` | het pad naar de databank, bv. `/_static/db/webshop.db` |
+| databank | code, tag `sql-db` | het pad naar de databank: `/_static/db/gadgetshop.db` (zie hieronder) |
 | titel en doelen | markdown | `# <titel>`, eventueel een korte instructie, en een kop `## Doelen` met de leerdoelen in leerlingentaal (een lijst) |
 | per vraag: vraagtekst | markdown | een kop `## Vraag n` (doorlopend genummerd vanaf 1, eventueel gevolgd door een titel: `## Vraag 2 — NULL`) en de vraagtekst |
 | per vraag: antwoordcel | code, één tag uit de tabel hieronder | zie hieronder |
@@ -78,6 +78,44 @@ Regels:
 De build geeft een waarschuwing bij een fout tegen dit formaat
 (`book/_ext/overhoringen.py`), en `tests/test_overhoringen.py` controleert elke
 overhoringnotebook.
+
+## De databank: gadgetshop.db
+
+SQL-vragen gebruiken `/_static/db/gadgetshop.db`, een webshop voor gadgets
+(issue #61). De cursuslessen gebruiken die databank **niet**: zo kan een
+leerling op een toets geen antwoord uit de cursus overnemen en moet hij het
+schema echt lezen (knop **Schema** in de editor). `tests/test_overhoringen.py`
+bewaakt dat geen enkele les ernaar verwijst.
+
+| tabel | kolommen | rijen |
+|---|---|---|
+| brands | brand_id, name, country, founded_year | 25 |
+| categories | category_id, name, parent_category_id | 17 |
+| products | product_id, name, model_code, brand_id, category_id, price, stock, color, weight_g, battery_hours, release_date, discontinued | 148 |
+| customers | customer_id, first_name, last_name, email, phone, city, postal_code, birth_date, join_date, newsletter | 500 |
+| orders | order_id, customer_id, order_date, status, payment_method, shipping_method, shipped_date, coupon_code | 4.215 |
+| order_items | order_id, product_id, quantity, unit_price, discount_pct | 10.463 |
+| reviews | review_id, product_id, customer_id, rating, title, review_date, verified_purchase | 1.425 |
+
+Wat er in zit voor vragen over SQL hoofdstuk 1 en 2: productnamen met Pro,
+Mini, Max en Lite (en de valkuilen *Pronto Charger* en *Maxi LED Strip*),
+modelcodes met een vaste lengte (`EB-312`), e-mails op verschillende domeinen,
+NULL in kleur, batterij, e-mail, telefoon, geboortedatum, verzenddatum,
+kortingscode en reviewtitel, datums als tekst `YYYY-MM-DD` (bestellingen van
+2023-09-01 tot 2026-08-31), prijzen van € 5 tot € 2.500, kolommen met weinig
+waarden (status, betaalmethode, verzendmethode, land) en twee steden in kleine
+letters plus een dubbel e-mailadres. Voor latere hoofdstukken: klanten zonder
+bestellingen, producten die nooit besteld of beoordeeld werden, merken en een
+categorie zonder producten, hoofdcategorieën (`parent_category_id IS NULL`) en
+reviews zonder aankoop (`verified_purchase = 0`). Let op: `discount_pct` is een
+geheel getal (10 = 10 %).
+
+De databank wordt gemaakt door `scripts/generate_gadgetshop_db.py`
+(deterministisch; de volledige beschrijving en de controles staan in het
+script). Wie iets wil veranderen, past het script aan en draait het opnieuw;
+`tests/test_gadgetshop_db.py` controleert dat de gecommitte databank precies is
+wat het script maakt. Controleer een modelquery altijd tegen de databank: ze
+moet werken en een zinvol, niet-leeg resultaat geven.
 
 ## Het antwoordbestand
 

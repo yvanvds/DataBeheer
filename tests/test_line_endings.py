@@ -55,6 +55,7 @@ UNTOUCHED_PATHS = [
     "book/_static/tippy/popper.min.js",
     "book/_static/db/adventureworks.db",
     "book/_static/db/webshop.db",
+    "book/_static/db/gadgetshop.db",
     "book/_static/excel/webshop_verkopen.xlsx",
     "book/_static/sqljs/sql-wasm.wasm",
 ]

@@ -4,13 +4,15 @@ book/overhoringen/<naam>/, gebouwd door book/_ext/overhoringen.py.
 Drie lagen, net als tests/test_book_structure.py en tests/test_sql_editor.py:
 
 - brontests: het formaat van elke overhoringnotebook (met de parser van de
-  extensie zelf), de regels voor wat een pagina wordt, en dat de cursus de
-  overhoringen niet kent;
+  extensie zelf), de regels voor wat een pagina wordt, dat de cursus de
+  overhoringen niet kent, en dat SQL-vragen de databank van de overhoringen
+  (gadgetshop.db, #61) gebruiken en de lessen niet;
 - tests op de gebouwde site (book/_build/html): de pagina bestaat, heeft geen
-  enkele weg naar de cursus, staat niet in de zoekindex, en haar CSS/JS staan
-  alleen op overhoringpagina's;
+  enkele weg naar de cursus, staat niet in de zoekindex, en haar CSS/JS en
+  databank staan alleen op overhoringpagina's;
 - e2e-tests in een echte Chromium (Playwright): de achtergrond verschilt van
-  de cursus (light en dark), de band blijft in beeld, en "Download mijn
+  de cursus (light en dark), de band blijft in beeld, de pagina opent
+  gadgetshop.db (het schema toont haar tabellen) en "Download mijn
   antwoorden" levert een Markdown-bestand met de drie vragen en hun antwoord.
   De Node-unittests van book/_static/overhoring-markdown.js
   (tests/overhoring-markdown.test.mjs) lopen hier ook.
@@ -31,6 +33,7 @@ import http.server
 import json
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -52,6 +55,11 @@ TEMPLATE = "overhoringen/template/overhoring"  # docname van de template
 TEMPLATE_PAGE = f"{TEMPLATE}.html"
 COURSE_PAGE = "chapters/SQL/01_Starten_met_sql.html"
 NODE_TEST = ROOT / "tests" / "overhoring-markdown.test.mjs"
+# De databank van de overhoringen (#61): niet die van de lessen, zodat een
+# leerling geen antwoord uit de cursus kan overnemen.
+QUIZ_DB = "/_static/db/gadgetshop.db"
+QUIZ_DB_FILE = BOOK / QUIZ_DB.lstrip("/")
+QUIZ_DB_TABLES = ["brands", "categories", "customers", "order_items", "orders", "products", "reviews"]
 NO_BUILD = "book/_build/html ontbreekt; bouw eerst met `teachbooks build book`"
 
 sys.path.insert(0, str(BOOK / "_ext"))
@@ -85,6 +93,25 @@ def toc_files() -> list[str]:
     return files
 
 
+def tagged_cells(path: Path, tag: str) -> list[str]:
+    """Brontekst van de codecellen van een notebook met de gegeven tag."""
+    cells = json.loads(path.read_text(encoding="utf-8"))["cells"]
+    return [
+        "".join(c["source"]).strip()
+        for c in cells
+        if c["cell_type"] == "code" and tag in c.get("metadata", {}).get("tags", [])
+    ]
+
+
+def quiz_db_count(sql: str) -> int:
+    """Een telling rechtstreeks op book/_static/db/gadgetshop.db."""
+    con = sqlite3.connect(QUIZ_DB_FILE)
+    try:
+        return con.execute(sql).fetchone()[0]
+    finally:
+        con.close()
+
+
 def source_text(rel: str) -> str:
     """Volledige brontekst (ook codecellen) van een pagina uit _toc.yml."""
     rel = re.sub(r"\.(md|ipynb)$", "", rel)
@@ -106,7 +133,7 @@ def notebook(*cells: tuple[str, str, list[str]]) -> dict:
 
 
 GOOD = [
-    ("code", "/_static/db/webshop.db", ["sql-db"]),
+    ("code", QUIZ_DB, ["sql-db"]),
     ("markdown", "# Titel\n\nInstructie.\n\n## Doelen\n\n- doel 1\n- doel 2", []),
     ("markdown", "## Vraag 1\n\nSchrijf een query.", []),
     ("code", "-- query", ["sql-live"]),
@@ -169,9 +196,32 @@ def test_template_shows_the_three_question_types() -> None:
     quiz, errors = overhoringen.read_quiz(QUIZ_DIR / "template" / "overhoring.ipynb")
     assert not errors, errors
     assert [q["type"] for q in quiz["questions"]] == ["sql", "open", "mc"]
-    cells = json.loads((QUIZ_DIR / "template" / "overhoring.ipynb").read_text(encoding="utf-8"))["cells"]
-    seeds = ["".join(c["source"]).strip() for c in cells if "sql-db" in c.get("metadata", {}).get("tags", [])]
-    assert len(seeds) == 1 and (BOOK / seeds[0].lstrip("/")).is_file(), seeds
+    assert tagged_cells(QUIZ_DIR / "template" / "overhoring.ipynb", "sql-db") == [QUIZ_DB]
+    assert QUIZ_DB_FILE.is_file(), f"{QUIZ_DB_FILE.relative_to(ROOT)} ontbreekt"
+
+
+def test_sql_questions_use_the_quiz_database() -> None:
+    """Een overhoring met een SQL-vraag laadt gadgetshop.db (#61, #63), niet een
+    databank uit de lessen: daar kent de leerling de antwoorden al."""
+    problems = [
+        f"{path.relative_to(ROOT)}: sql-db is {tagged_cells(path, 'sql-db')}, verwacht [{QUIZ_DB!r}]"
+        for path in quiz_notebooks()
+        if tagged_cells(path, "sql-live") and tagged_cells(path, "sql-db") != [QUIZ_DB]
+    ]
+    assert not problems, "\n".join(problems)
+
+
+def test_the_course_does_not_use_the_quiz_database() -> None:
+    """De lessen gebruiken gadgetshop.db niet (#61): geen sql-db-cel, geen query,
+    geen vermelding. Gecontroleerd op elke pagina uit _toc.yml (ook de codecellen)
+    en op elk bestand in book/chapters/, ook wat (nog) niet in de inhoudstafel staat."""
+    needle = QUIZ_DB_FILE.stem  # "gadgetshop"
+    problems = [f for f in toc_files() if needle in source_text(f).lower()]
+    for path in sorted((BOOK / "chapters").rglob("*")):
+        if path.suffix in (".ipynb", ".md") and ".ipynb_checkpoints" not in path.parts:
+            if needle in path.read_text(encoding="utf-8").lower():
+                problems.append(path.relative_to(BOOK).as_posix())
+    assert not problems, f"lessen die de databank van de overhoringen gebruiken: {problems}"
 
 
 def test_parser_reads_the_format() -> None:
@@ -297,6 +347,24 @@ def test_html_other_files_in_the_quiz_folders_are_not_pages() -> None:
     assert (QUIZ_DIR / "README.md").is_file()
 
 
+def seed_of(text: str) -> str | None:
+    """Het pad in de sql-db-cel van een gebouwde pagina (de editor leest de tekst van de <pre>)."""
+    m = re.search(r'<div class="cell tag_sql-db[^"]*">.*?<pre>(.*?)</pre>', text, flags=re.DOTALL)
+    return html.unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip() if m else None
+
+
+def test_html_only_quiz_pages_load_the_quiz_database() -> None:
+    assert seed_of(built(TEMPLATE_PAGE)) == QUIZ_DB
+    assert (HTML / QUIZ_DB.lstrip("/")).is_file(), "gadgetshop.db staat niet in de gebouwde site"
+    course = [
+        page.relative_to(HTML).as_posix()
+        for page in HTML.rglob("*.html")
+        if not page.relative_to(HTML).as_posix().startswith("overhoringen/")
+        and QUIZ_DB_FILE.stem in page.read_text(encoding="utf-8")
+    ]
+    assert not course, f"cursuspagina's die gadgetshop.db gebruiken: {course}"
+
+
 def test_html_quiz_assets_are_only_on_quiz_pages() -> None:
     course = built(COURSE_PAGE)
     for asset in ("overhoring.css", "overhoring.js", "overhoring-markdown.js"):
@@ -418,18 +486,51 @@ def test_band_stays_in_view_on_large_screen_mode(browser, site_url) -> None:
         context.close()
 
 
+def test_quiz_page_opens_the_quiz_database(browser, site_url) -> None:
+    """De SQL-vragen draaien op gadgetshop.db (#61): de knop Schema toont haar
+    zeven tabellen (de leerling moet het schema kunnen lezen) en een telling in
+    de editor klopt met het bestand. Een les opent die databank niet."""
+    context, page, errors = open_page(browser, site_url + TEMPLATE_PAGE)
+    try:
+        wait_ready(page)
+        page.locator(".sql-live-wrap button.schema").first.click()
+        tables = page.locator(".sql-schema-overlay.visible .sql-schema-list.tables .sql-schema-list-item")
+        expect(tables).to_have_count(len(QUIZ_DB_TABLES))
+        assert sorted(tables.evaluate_all("els => els.map(el => el.dataset.name)")) == QUIZ_DB_TABLES
+        page.keyboard.press("Escape")
+        expect(page.locator(".sql-schema-overlay.visible")).to_have_count(0)
+
+        page.evaluate("sql => window.sqlLive.editors[0].setValue(sql)", "SELECT COUNT(*) AS n FROM reviews;")
+        page.locator(".sql-live-wrap button.run").first.click()
+        expect(page.locator(".sql-live-output td")).to_have_text([str(quiz_db_count("SELECT COUNT(*) FROM reviews"))])
+        assert errors == [], errors
+
+        course = context.new_page()
+        course.goto(site_url + COURSE_PAGE)
+        wait_ready(course)
+        course.wait_for_function("() => Object.keys(window.sqlLive.schema || {}).length > 0")
+        course_tables = course.evaluate("() => Object.keys(window.sqlLive.schema)")
+        assert "customers" in course_tables, course_tables
+        assert not {"brands", "categories", "reviews", "order_items"} & set(course_tables), course_tables
+    finally:
+        context.close()
+
+
 def answer_everything(page) -> tuple[str, str, str]:
-    """Vul de drie vragen van de template in zoals een leerling."""
-    query = "SELECT first_name, last_name, city\nFROM customers\nWHERE city = 'Gent'\nORDER BY last_name;"
+    """Vul de drie vragen van de template in zoals een leerling. De query draait
+    op gadgetshop.db: products heeft daar een kolom color (in webshop.db niet)."""
+    query = "SELECT name, price, color\nFROM products\nWHERE price > 1000\nORDER BY price DESC;"
     # Via de publieke API van de editor (#14), zoals in tests/test_sql_editor.py:
     # typen zou door autocomplete en closeBrackets lopen.
     page.evaluate("sql => window.sqlLive.editors[0].setValue(sql)", query)
     page.locator(".sql-live-wrap button.run").first.click()
-    expect(page.locator(".sql-live-output th").first).to_have_text("first_name")
-    text = "De query toont elke stad één keer.\nDISTINCT haalt de dubbels weg."
+    expect(page.locator(".sql-live-output th")).to_have_text(["name", "price", "color"])
+    expected_rows = quiz_db_count("SELECT COUNT(*) FROM products WHERE price > 1000")
+    expect(page.locator(".sql-live-output tbody tr")).to_have_count(expected_rows)
+    text = "De query toont elk land één keer.\nDISTINCT haalt de dubbels weg."
     page.locator(".overhoring-open__input").fill(text)
-    choice = "`WHERE email IS NULL`"
-    page.locator(".overhoring-mc__option", has_text="WHERE email IS NULL").click()
+    choice = "`WHERE shipped_date IS NULL`"
+    page.locator(".overhoring-mc__option", has_text="WHERE shipped_date IS NULL").click()
     return query, text, choice
 
 
@@ -458,7 +559,7 @@ def test_download_my_answers_contains_every_question_with_its_answer(browser, si
         wait_ready(page)
         assert page.evaluate("() => window.sqlLive.editors[0].getValue()") == query
         expect(page.locator(".overhoring-open__input")).to_have_value(text)
-        expect(page.locator(".overhoring-mc__option", has_text="WHERE email IS NULL").locator("input")).to_be_checked()
+        expect(page.locator(".overhoring-mc__option", has_text="WHERE shipped_date IS NULL").locator("input")).to_be_checked()
 
         name, md = download_answers(page, tmp_path)
         assert name == "template-antwoorden.md"
@@ -470,7 +571,7 @@ def test_download_my_answers_contains_every_question_with_its_answer(browser, si
         sections = re.split(r"^## Vraag \d+.*$", md, flags=re.MULTILINE)[1:]
         assert len(sections) == 3, md
         assert f"**Antwoord:**\n\n```sql\n{query}\n```" in sections[0]
-        assert "**Antwoord:**\n\n> De query toont elke stad één keer.\n> DISTINCT haalt de dubbels weg." in sections[1]
+        assert "**Antwoord:**\n\n> De query toont elk land één keer.\n> DISTINCT haalt de dubbels weg." in sections[1]
         options = quiz["questions"][2]["options"]
         expected = "\n".join(f"- [{'x' if o == choice else ' '}] {o}" for o in options)
         assert f"**Antwoord:**\n\n{expected}" in sections[2]
@@ -493,7 +594,7 @@ def test_quiz_works_when_storage_is_blocked(browser, site_url, tmp_path) -> None
         query, text, choice = answer_everything(page)
         _, md = download_answers(page, tmp_path)
         assert f"```sql\n{query}\n```" in md
-        assert "> De query toont elke stad één keer." in md
+        assert "> De query toont elk land één keer." in md
         assert f"- [x] {choice}" in md
         assert errors == [], errors
     finally:

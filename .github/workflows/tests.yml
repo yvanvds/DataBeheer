@@ -21,6 +21,7 @@ on:
     paths:
       - book/**
       - tests/**
+      - scripts/generate_gadgetshop_db.py   # tests/test_gadgetshop_db.py vergelijkt de databank met dit script
       - requirements.txt
       - requirements-dev.txt
       - package.json
