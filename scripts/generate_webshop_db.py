@@ -406,11 +406,14 @@ def verify():
                "AND length(last_name)=3") >= 2
     assert one("SELECT COUNT(*) FROM orders WHERE order_date LIKE '2025-07-%'") > 0
     assert one("SELECT COUNT(*) FROM customers WHERE city IN ('Antwerpen','Brussel')") > 5
-
-    # Les 1: steden, Brugge, laptops > 1500 euro
-    assert one("SELECT COUNT(*) FROM customers WHERE city='Brugge'") >= 1
+    # Laptops > 1500 euro: stond tot #65 in les 1, maar vraagt LIKE (les 2)
     assert one("SELECT COUNT(*) FROM products WHERE name LIKE '%Laptop%' "
                "AND unit_price > 1500") >= 2
+
+    # Les 1: steden, Brugge, computers > 1000 euro (alleen AND, geen LIKE)
+    assert one("SELECT COUNT(*) FROM customers WHERE city='Brugge'") >= 1
+    assert one("SELECT COUNT(*) FROM products WHERE category = 'Computers' "
+               "AND unit_price > 1000") >= 2
 
     # Les 3: LEFT JOIN-oefeningen
     assert one("SELECT COUNT(*) FROM customers c LEFT JOIN orders o "

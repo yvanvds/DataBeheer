@@ -1,0 +1,72 @@
+{#- Paginasjabloon voor overhoringen (issue #60), gekozen door _ext/overhoringen.py.
+
+    Een overhoringpagina staat op zichzelf: geen weg naar de cursus. Daarom
+    vervangt dit sjabloon het hele `content`-blok van pydata-sphinx-theme
+    (layout.html) — zijbalk met logo en inhoudstafel, zoekvenster (Ctrl+K),
+    artikelheader met GitHub-/downloadknoppen, vorige/volgende, inhoudstafel
+    rechts, voettekst — door een vaste band "Overhoring" en het artikel.
+    De <head> (CSS, scripts, het geharde mode-script uit
+    _ext/harden_theme_storage.py) blijft die van het thema, zonder de
+    rel-links naar index, zoeken en vorige/volgende.
+
+    Bewust zonder de themascripts onderaan (bootstrap.js,
+    pydata-sphinx-theme.js): die bedienen alleen onderdelen die hier ontbreken,
+    en de sneltoets Ctrl+K gooit een fout zonder zoekvenster. Licht of donker
+    volgt de keuze uit de cursus (of het besturingssysteem), gezet door het
+    mode-script in de <head>. -#}
+{%- extends "layout.html" %}
+
+{%- block htmltitle %}
+    <title>Overhoring · {{ title|striptags|e }}</title>
+{%- endblock %}
+
+{#- De head van het thema, zonder de preload van de themascripts die hier
+    niet geladen worden (anders meldt de browser een ongebruikte preload). #}
+{%- block css %}
+  {%- import "static/webpack-macros.html" as _webpack with context %}
+  {{- super()|replace(_webpack.head_js_preload(), "") }}
+{%- endblock css %}
+
+{#- Geen <link rel="index|search|prev|next"> naar de cursus. #}
+{%- block linktags %}{%- endblock %}
+
+{%- block extrahead %}
+{{ super() }}
+  <meta name="robots" content="noindex, nofollow"/>
+  {#- De marker waar _static/overhoring.css op inhaakt. Op <html> (en niet op
+      <body>): de editorkleuren (--sql-*) worden daar uit de --plink-*-tokens
+      afgeleid, dus alleen een override op <html> kleurt ook de editors mee.
+      Het thema bepaalt de <html>-tag zelf; dit script loopt vóór de eerste
+      weergave, dus er is geen flits in de cursuskleuren. #}
+  <script>document.documentElement.classList.add("overhoring");</script>
+{%- endblock %}
+
+{%- block body_tag %}
+  <body class="overhoring-page" data-overhoring="{{ overhoring_id|e }}">
+{%- endblock %}
+
+{%- block content %}
+  <header class="overhoring-band" aria-label="Overhoring">
+    <span class="overhoring-band__label">Overhoring</span>
+    <span class="overhoring-band__title">{{ title|striptags|e }}</span>
+  </header>
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      <main id="main-content" class="bd-main" role="main">
+        {#- sphinx-book-theme.js observeert deze helper (scroll-detectie) en
+            gooit zonder een fout. #}
+        <div class="sbt-scroll-pixel-helper"></div>
+        <div class="bd-content">
+          <div class="bd-article-container">
+            <article class="bd-article">
+              {{ body }}
+            </article>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script type="application/json" id="overhoring-data">{{ overhoring_data }}</script>
+{%- endblock content %}
+
+{%- block footer %}{%- endblock footer %}

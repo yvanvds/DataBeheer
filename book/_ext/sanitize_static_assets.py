@@ -11,6 +11,8 @@
    ``sql-statements.js``, ``sql-queries-file.js``, ``sql-db-store.js`` en het
    overlay via ``import`` kan laden; de rest
    wordt on demand geladen via ``import()`` of ``new Worker(...)``.
+   ``overhoring.js`` en ``overhoring.css`` (issue #60) horen alleen op de
+   overhoringpagina's; ``_ext/overhoringen.py`` voegt ze daar per pagina toe.
 
 2. Sphinx (t/m 7.x) zet inline scripts (``add_js_file(None, body=...)``) van
    extensies dubbel op de pagina: ``StandaloneHTMLBuilder.prepare_writing``
@@ -55,14 +57,24 @@ _DROP_JS = {
     "sql-queries-file.js",  # ES-module, statisch geimporteerd door sql-editors.js (#30/#35)
     "sql-db-store.js",  # ES-module, statisch geimporteerd door sql-editors.js (#41)
     "sql-worker.js",   # workerscript, gestart via new Worker(...)
+    # Overhoringen (#60): alleen op overhoringpagina's, per pagina toegevoegd
+    # door _ext/overhoringen.py (als module).
+    "overhoring.js",
+    "overhoring-markdown.js",  # ES-module, statisch geimporteerd door overhoring.js
 }
+
+# Stylesheets uit book/_static die niet op elke pagina horen (Jupyter Book
+# zet elk *.css-bestand in html_css_files). overhoring.css (#60) voegt
+# _ext/overhoringen.py alleen op overhoringpagina's toe.
+_DROP_CSS_FILES = {"overhoring.css"}
 
 # CSS-verwijzingen die naar niet-bestaande bestanden wijzen (zie punt 4).
 _DROP_CSS = {"_static/thebe.css"}
 
 
 def _prune_static_js(app, config):
-    """Haal auto-toegevoegde _static-bestanden uit ``html_js_files`` (punt 1)."""
+    """Haal auto-toegevoegde _static-bestanden uit ``html_js_files`` (punt 1)
+    en de paginaspecifieke stylesheets uit ``html_css_files``."""
     kept = []
     for entry in config.html_js_files:
         filename = entry[0] if isinstance(entry, (tuple, list)) else entry
@@ -76,6 +88,11 @@ def _prune_static_js(app, config):
                 continue
         kept.append(entry)
     config.html_js_files[:] = kept
+    config.html_css_files[:] = [
+        entry
+        for entry in config.html_css_files
+        if (entry[0] if isinstance(entry, (tuple, list)) else entry) not in _DROP_CSS_FILES
+    ]
 
 
 def _asset_key(asset):

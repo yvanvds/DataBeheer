@@ -1,7 +1,8 @@
 # Tests op elke push: de structuurtests op de bronnen en de gebouwde HTML
 # (tests/test_book_structure.py), de Node-unittests van de pure editor-modules
 # (tests/*.test.mjs, via pytest aangeroepen) en de Playwright/Chromium-e2e-tests
-# van de SQL-editor (tests/test_sql_editor.py). Bewust los van
+# van de SQL-editor (tests/test_sql_editor.py) en van de overhoringen
+# (tests/test_overhoringen.py). Bewust los van
 # call-deploy-book.yml: een rode test blokkeert de publicatie niet, maar kleurt
 # de check op de PR wel rood (issue #39).
 #
@@ -20,6 +21,8 @@ on:
     paths:
       - book/**
       - tests/**
+      - scripts/generate_gadgetshop_db.py   # tests/test_gadgetshop_db.py vergelijkt de databank met dit script
+      - .claude/skills/**                   # tests/test_rubriek.py en test_overhoring_skill.py: de controlescripts en de SKILL.md's
       - requirements.txt
       - requirements-dev.txt
       - package.json
