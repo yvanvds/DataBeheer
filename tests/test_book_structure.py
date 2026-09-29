@@ -6,7 +6,8 @@ aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
 (issue #49), de knop die een cel schermvullend maakt (issue #48), geen
 LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65),
 SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66),
-canonieke links naar de site van main in /main/ (issue #67)
+canonieke links naar de site van main in /main/ (issue #67),
+BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -878,6 +879,76 @@ def test_nothing_before_sql_chapter_2_uses_or_asks_for_like() -> None:
     )
     hits = find_phrases(sql_comment_lines(LIKE_CHAPTER), PATTERN_SEARCH_PHRASES)
     assert any("'Laptop' in hun naam" in hit for hit in hits), f"{LIKE_CHAPTER}: de laptopoefening staat niet bij de LIKE-oefeningen"
+
+
+# BETWEEN (issue #68) is inclusief: `x BETWEEN a AND b` betekent `x >= a AND
+# x <= b`. §4 van SQL hoofdstuk 2 zette er `unit_price > 10 AND unit_price <
+# 100` naast, met "Het resultaat is hetzelfde". In webshop.db kost geen product
+# precies 10 of 100 euro, dus het voorbeeld zelf verraadde het niet; oefening 1
+# (product_id's tussen 5 en 10) wel: 934 rijen met BETWEEN, 746 met > en <.
+BETWEEN_CHAPTER = "chapters/SQL/02_Meer_opties_voor_WHERE"
+BETWEEN_HEADING = re.compile(r"^## \d+\. BETWEEN\s*$", flags=re.MULTILINE)
+BETWEEN_RANGE = re.compile(r"\b(\w+)\s+BETWEEN\s+(-?\d+(?:\.\d+)?)\s+AND\s+(-?\d+(?:\.\d+)?)", flags=re.IGNORECASE)
+SQL_FENCE = re.compile(r"^```[ \t]*sql[ \t]*\n(.*?)^```", flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+WHERE_CONDITION = re.compile(r"\bWHERE\b(.*?)(?=\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|$)", flags=re.IGNORECASE | re.DOTALL)
+NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+
+
+def section_cells(rel: str, heading: re.Pattern) -> list[dict]:
+    """De cellen van een notebook vanaf de kop die `heading` vindt tot de
+    volgende ##-kop: de uitleg, de voorbeelden en de oefeningen van één paragraaf."""
+    cells = json.loads((BOOK / f"{rel}.ipynb").read_text(encoding="utf-8"))["cells"]
+    starts = [i for i, c in enumerate(cells) if c["cell_type"] == "markdown" and heading.search("".join(c["source"]))]
+    assert starts, f"{rel}: geen paragraaf /{heading.pattern}/"
+    section = [cells[starts[0]]]
+    for cell in cells[starts[0] + 1 :]:
+        if cell["cell_type"] == "markdown" and re.search(r"^## ", "".join(cell["source"]), flags=re.MULTILINE):
+            break
+        section.append(cell)
+    return section
+
+
+def test_between_example_with_and_keeps_both_boundaries() -> None:
+    """Issue #68: de query met AND die §4 naast BETWEEN zet ("het resultaat is
+    hetzelfde"), geeft ook óp de grenzen hetzelfde als BETWEEN; de uitleg zegt
+    dat de grenzen erbij horen, en het commentaar boven elk voorbeeld noemt de
+    grenzen van dat voorbeeld. De voorwaarden worden los van webshop.db
+    vergeleken, voor waarden onder, op, tussen en boven de grenzen: in
+    webshop.db ligt geen prijs op 10 of 100, dus daar valt het verschil niet op."""
+    cells = section_cells(BETWEEN_CHAPTER, BETWEEN_HEADING)
+    markdown = "\n".join("".join(c["source"]) for c in cells if c["cell_type"] == "markdown")
+    live = ["".join(c["source"]) for c in cells if c["cell_type"] == "code" and "sql-live" in c.get("metadata", {}).get("tags", [])]
+    examples = [sql for sql in SQL_FENCE.findall(markdown) + live if sql_statements(sql)]
+    conditions = [m.group(1).strip() for sql in examples for s in sql_statements(sql) if (m := WHERE_CONDITION.search(s))]
+    ranges = [c for c in conditions if BETWEEN_RANGE.search(c)]
+    others = [c for c in conditions if not BETWEEN_RANGE.search(c)]
+    assert ranges, f"{BETWEEN_CHAPTER}: geen voorbeeld met BETWEEN in §4"
+    assert others, f"{BETWEEN_CHAPTER}: geen voorbeeld met AND naast BETWEEN in §4"
+
+    problems = []
+    con = sqlite3.connect(":memory:")
+    for between in ranges:
+        column, low, high = BETWEEN_RANGE.search(between).groups()
+        low, high = float(low), float(high)
+        for other in others:
+            for value in (low - 1, low, (low + high) / 2, high, high + 1):
+                row = f"(SELECT ? AS {column})"
+                with_between, with_and = (bool(con.execute(f"SELECT {cond} FROM {row}", (value,)).fetchone()[0]) for cond in (between, other))
+                if with_between != with_and:
+                    problems.append(f"`{other}` is {with_and}, `{between}` is {with_between} voor {column} = {value:g}")
+    if not re.search(r"\btot en met\b", SQL_FENCE.sub("", markdown), flags=re.IGNORECASE):
+        problems.append("de uitleg zegt niet dat de grenzen erbij horen ('tot en met')")
+    for sql in examples:
+        # Het commentaar boven het voorbeeld beschrijft dat voorbeeld; het stond er
+        # eerst overgenomen uit §3 ("Producten in bepaalde categorieën").
+        comment = sql.lstrip().splitlines()[0]
+        numbers = {n for s in sql_statements(sql) if (m := WHERE_CONDITION.search(s)) for n in NUMBER.findall(m.group(1))}
+        missing = sorted(n for n in numbers if not re.search(rf"(?<![\w.]){re.escape(n)}(?![\w.])", comment))
+        if not comment.startswith("--"):
+            problems.append(f"geen commentaar boven het voorbeeld: {comment!r}")
+        elif missing:
+            problems.append(f"het commentaar boven het voorbeeld noemt de grenzen {missing} niet: {comment!r}")
+    assert not problems, f"{BETWEEN_CHAPTER} §4 BETWEEN:\n" + "\n".join(problems)
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:

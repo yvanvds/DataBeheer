@@ -85,9 +85,9 @@ Niet opgenomen: `LOWER()` om zonder onderscheid tussen hoofdletters en kleine le
 - Leerplan: LPD 4
 
 ### SQL2.4 — Een bereik filteren met BETWEEN
-- Doel: De leerling kan met `BETWEEN … AND …` rijen selecteren waarvan een waarde binnen een bereik ligt.
+- Doel: De leerling kan met `BETWEEN … AND …` rijen selecteren waarvan een waarde binnen een bereik ligt, de grenzen inbegrepen (tot en met).
 - Belang: kern
-- Waar: 02_Meer_opties_voor_WHERE §4 BETWEEN, oef. 1–2; 02b_AdventureWorks oef. 6
+- Waar: 02_Meer_opties_voor_WHERE §4 BETWEEN, oef. 1–3; 02b_AdventureWorks oef. 6
 - Leerplan: LPD 4
 
 ### SQL2.5 — Datums filteren als tekst

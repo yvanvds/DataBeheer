@@ -406,6 +406,10 @@ def verify():
                "AND length(last_name)=3") >= 2
     assert one("SELECT COUNT(*) FROM orders WHERE order_date LIKE '2025-07-%'") > 0
     assert one("SELECT COUNT(*) FROM customers WHERE city IN ('Antwerpen','Brussel')") > 5
+    # §4 BETWEEN, oef. 3 (#68): > en < geven minder orderregels dan BETWEEN
+    # 5 AND 10, omdat er orderregels zijn met product_id 5 en 10 (de grenzen).
+    assert one("SELECT COUNT(*) FROM order_lines WHERE product_id BETWEEN 5 AND 10") \
+        > one("SELECT COUNT(*) FROM order_lines WHERE product_id > 5 AND product_id < 10")
     # Laptops > 1500 euro: stond tot #65 in les 1, maar vraagt LIKE (les 2)
     assert one("SELECT COUNT(*) FROM products WHERE name LIKE '%Laptop%' "
                "AND unit_price > 1500") >= 2
