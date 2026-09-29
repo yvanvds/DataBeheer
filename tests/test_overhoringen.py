@@ -55,6 +55,8 @@ QUIZ_DIR = BOOK / "overhoringen"
 TEMPLATE = "overhoringen/template/overhoring"  # docname van de template
 TEMPLATE_PAGE = f"{TEMPLATE}.html"
 COURSE_PAGE = "chapters/SQL/01_Starten_met_sql.html"
+# html_baseurl: de deploy zet main in /DataBeheer/main/ (issue #67).
+SITE = "https://yvanvds.github.io/DataBeheer/main/"
 NODE_TEST = ROOT / "tests" / "overhoring-markdown.test.mjs"
 # De databank van de overhoringen (#61): niet die van de lessen, zodat een
 # leerling geen antwoord uit de cursus kan overnemen.
@@ -305,8 +307,8 @@ def test_html_quiz_page_has_no_way_to_the_course() -> None:
         url = html.unescape(url)
         if url.startswith(("../../_static/", "#")):
             continue
-        if url in ("https://yvanvds.github.io/DataBeheer/overhoringen/template/overhoring.html",
-                   "https://unpkg.com/viewerjs/dist/viewer.min.css"):  # canonieke URL, stylesheet van teachbooks_zoomies
+        if url in (f"{SITE}{TEMPLATE_PAGE}",  # canonieke URL (issue #67)
+                   "https://unpkg.com/viewerjs/dist/viewer.min.css"):  # stylesheet van teachbooks_zoomies
             continue
         problems.append(f'{attr}="{url}"')
     assert not problems, "verwijzingen weg van de overhoring:\n" + "\n".join(problems)

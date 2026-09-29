@@ -1,2 +1,4 @@
-# All files in the repo
-* @Tom-van-Woudenberg
+# Eigenaar van alle bestanden in de repo. Uit de TeachBooks-template stond hier
+# een maintainer van die template; tests/test_repo_metadata.py houdt de eigenaar
+# gelijk aan die van de repository in book/_config.yml (issue #71).
+* @yvanvds
