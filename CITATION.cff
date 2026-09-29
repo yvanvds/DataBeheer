@@ -1,51 +1,45 @@
-# This CITATION.cff file was generated with cffinit.
-# Visit https://bit.ly/cffinit to generate yours today!
+# Citatiegegevens van de cursus Databeheer (Citation File Format 1.2.0).
+# GitHub toont ze onder "Cite this repository". De url is het adres van main:
+# de TeachBooks-deploy zet main in /DataBeheer/main/, zonder /main/ geeft
+# GitHub Pages een 404 (issue #67). Houd url gelijk aan html_baseurl in
+# book/_config.yml; tests/test_repo_metadata.py bewaakt dat (issue #70).
 
 cff-version: 1.2.0
-title: 'TeachBooks Template' # replace with your own book title when you use this template
-authors: #replace with your own name(s) if you use this template
-- email: info@teachbooks.io
-  name: 'TeachBooks Development Team'
-  website: 'https://teachbooks.io/'
-message: 'If you use this teachbook, please cite it using these metadata.'
+message: 'Gebruik je dit lesmateriaal, verwijs er dan naar met deze gegevens.'
+title: 'Databeheer'
+abstract: >-
+  Cursus informatica voor 5BW (Bedrijfswetenschappen, derde graad secundair
+  onderwijs) over relationele databanken en data-analyse, in drie delen:
+  databases bevragen met SQL, big data analyseren met Power BI en databases
+  ontwerpen met ERD's. De SQL-oefeningen draaien rechtstreeks in de browser.
+authors:
+  - given-names: 'yvan'
+    family-names: 'vander sanden'
+url: 'https://yvanvds.github.io/DataBeheer/main/'
+repository-code: 'https://github.com/yvanvds/DataBeheer'
+license: CC-BY-4.0
+keywords:
+  - databanken
+  - SQL
+  - big data
+  - Power BI
+  - ERD
+  - secundair onderwijs
 preferred-citation:
   type: book
-  authors: #replace with your own name(s) if you use this template
-  - email: info@teachbooks.io
-    name: 'TeachBooks Development Team'
-    website: 'https://teachbooks.io/'
-#  - given-names: Tom
-#    name-particle: van
-#    family-names: Woudenberg
-#    email: t.r.van.woudenberg@tudelft.nl
-#    affiliation: TeachBooks
-#    orcid: 'https://orcid.org/0000-0002-9536-061X'
-  url: 'https://teachbooks.github.io/template/' # replace with your own URL (book website / publisher link) when you use this template
+  title: 'Databeheer'
+  authors:
+    - given-names: 'yvan'
+      family-names: 'vander sanden'
+  url: 'https://yvanvds.github.io/DataBeheer/main/'
+  repository-code: 'https://github.com/yvanvds/DataBeheer'
   identifiers:
     - type: url
-      value: 'https://teachbooks.github.io/template/' # replace with your own URL when you use this template
-      description: 'Published book on GitHub Pages'
+      value: 'https://yvanvds.github.io/DataBeheer/main/'
+      description: 'Het boek op GitHub Pages'
     - type: url
-      value: 'https://github.com/TeachBooks/template' # replace with your own URL when you use this template
-      description: 'GitHub repository'
-  abstract: >- # replace with your own abstract when you use this template
-    The template allows you to start your own TeachBook and
-    hosting that TeachBook online without knowledge on Git,
-    the Jupyter book package, python or anaconda. It doesn't
-    elaborate on the collaborative functionalities of Git or
-    how to edit the book
-  keywords: # replace with your own keywords when you use this template
-    - TeachBooks
-    - Template
-    - 'Jupyter Book'
-  title: 'TeachBooks Template' # replace with your own book title when you use this template
-  institution:
-    name: 'TeachBooks' # replace with your own institution when you use this template
+      value: 'https://github.com/yvanvds/DataBeheer'
+      description: 'GitHub-repository'
   license: CC-BY-4.0
-  license-url: 'https://creativecommons.org/licenses/by/4.0/'
-  copyright: '© 2025 TeachBooks' # replace with your own affiliation / name when you use this template
   languages:
-    - en # replace with your book language when you use this template
-  contact: # replace with your own contact information when you use this template
-  - email: info@teachbooks.io
-    name: 'TeachBooks Development Team'
+    - nl
