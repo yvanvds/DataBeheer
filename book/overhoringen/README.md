@@ -24,11 +24,16 @@ book/overhoringen/
 │   └── overhoring.ipynb      de template, en de testpagina van de drie vraagtypes
 └── <naam>/                   één map per overhoring, <naam> is een slug (bv. sql-h1-h2)
     ├── overhoring.ipynb      de overhoring
-    ├── leerdoelen.md         voor de leraar (geen pagina), gemaakt met /leerdoelen
+    ├── leerdoelen.md         voor de leraar (geen pagina): de leerdoelen en de dekkingstabel
     └── rubriek.csv           voor Teams (geen pagina), gemaakt met /rubriek
 ```
 
-De formaten van `leerdoelen.md` en `rubriek.csv` staan in de skills
+De skill /overhoring (`.claude/skills/overhoring/SKILL.md`, issue #63) maakt
+zo'n map in één keer: de leerdoelen met /leerdoelen, de keuze van de vragen met
+een dekkingstabel vraag × leerdoel (`## Dekking` in `leerdoelen.md`), de
+rubriek met /rubriek en de overhoring zelf, en publiceert ze.
+`.claude/skills/overhoring/check_overhoring.py` controleert de hele map. De
+formaten van `leerdoelen.md` en `rubriek.csv` staan in de skills
 `.claude/skills/leerdoelen/SKILL.md` en `.claude/skills/rubriek/SKILL.md`
 (issue #62); `.claude/skills/rubriek/check_rubriek.py` controleert een rubriek
 voor ze naar Teams gaat.
@@ -37,7 +42,9 @@ voor ze naar Teams gaat.
   in `book/overhoringen/<naam>/`. Al de rest (`leerdoelen.md`, `rubriek.csv`,
   notities, dieper geneste mappen) wordt geen pagina.
 - **Adres:** `overhoringen/<naam>/overhoring.ipynb` wordt
-  `https://yvanvds.github.io/DataBeheer/overhoringen/<naam>/overhoring.html`.
+  `https://yvanvds.github.io/DataBeheer/main/overhoringen/<naam>/overhoring.html`.
+  De TeachBooks-deploy zet elke branch in een eigen map (main in `/main/`);
+  zonder `/main/` geeft GitHub Pages een 404 die pas met JavaScript doorverwijst.
 - **Antwoordbestand:** "Download mijn antwoorden" bewaart
   `<naam>-antwoorden.md`. Een tweede notebook in dezelfde map, bv. een
   parallelversie `groep-b.ipynb`, wordt `overhoringen/<naam>/groep-b.html` met

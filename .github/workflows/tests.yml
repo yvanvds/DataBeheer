@@ -22,7 +22,7 @@ on:
       - book/**
       - tests/**
       - scripts/generate_gadgetshop_db.py   # tests/test_gadgetshop_db.py vergelijkt de databank met dit script
-      - .claude/skills/**                   # tests/test_rubriek.py: check_rubriek.py, het voorbeeld en de SKILL.md's
+      - .claude/skills/**                   # tests/test_rubriek.py en test_overhoring_skill.py: de controlescripts en de SKILL.md's
       - requirements.txt
       - requirements-dev.txt
       - package.json
