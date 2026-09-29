@@ -150,11 +150,12 @@ om een fout weg te werken.
 2. `.venv/Scripts/python .claude/skills/rubriek/check_rubriek.py book/overhoringen/<naam>/rubriek.csv`
    meldt `OK`.
 3. `.venv/Scripts/teachbooks build book`, met de uitvoer in een bestand in je
-   scratchpad: geen enkele `WARNING` over `overhoringen/<naam>`, en de pagina
+   scratchpad: geen enkele `WARNING`, en de pagina
    `book/_build/html/overhoringen/<naam>/overhoring.html` bestaat. Een nieuwe
-   map verandert `exclude_patterns`, dus de build leest alle pagina's opnieuw
-   en toont ook warnings van cursuspagina's die een incrementele build niet
-   toont. Die staan los van de overhoring: noem ze, maar los ze hier niet op.
+   map verandert `exclude_patterns`, dus de build leest alle pagina's opnieuw;
+   de cursus zelf bouwt zonder warnings. Gaat een warning over een
+   cursuspagina, dan is dat een regressie buiten de overhoring: noem ze, maar
+   los ze hier niet op.
 4. `.venv/Scripts/python -m pytest tests/test_overhoringen.py tests/test_overhoring_skill.py`
    is groen: die controleren ook de gebouwde pagina en de map.
 

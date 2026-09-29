@@ -4,7 +4,8 @@ het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
 interactieve cellen (issue #43), de foreign keys die de site-editor zelf
 aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
 (issue #49), de knop die een cel schermvullend maakt (issue #48), geen
-LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65)
+LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65),
+SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -25,6 +26,7 @@ import json
 import re
 import sqlite3
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +139,22 @@ OUTSIDE_THE_SITE_PAGES = [LAST_ERD]
 # editor uitvoert (sql-editors.js).
 SQL_CELL_TAGS = ("sql-db", "sql-live")
 NON_SQL_COMMENT = re.compile(r"^\s*(#|//)")
+
+# Lexer van de SQL-cellen (issues #18 en #66): myst-nb highlight de codecellen
+# van een notebook met `language_info.pygments_lexer` uit de notebook-metadata,
+# en anders met `language_info.name` (myst_nb/core/execute/base.py). Staat daar
+# python, dan lext Pygments de SQL als Python: verkeerde kleuren, en een
+# build-warning zodra een cel een teken bevat dat geen Python-token is (de `—`
+# in een commentaarregel van ERD hoofdstuk 5). Een incrementele build schrijft
+# de pagina niet opnieuw en toont die warning dus niet. Jupyter zet de metadata
+# terug op python zodra je de notebook met een Python-kernel opslaat.
+SQL_LEXER = "sql"
+SQL_LANGUAGE_INFO = '"language_info": {"name": "sql", "pygments_lexer": "sql"}'
+# In de gebouwde pagina draagt elke codecel haar lexer als klasse:
+# <div class="cell tag_sql-live …"><div class="cell_input …"><div class="highlight-sql …">.
+HTML_CELL_LEXER = re.compile(
+    r'<div class="cell (?P<classes>[^"]*)">\s*<div class="cell_input[^"]*">\s*<div class="highlight-(?P<lexer>[\w-]*)'
+)
 
 # Onderzoekscompetenties (issue #37): één pagina in het Big Data-deel definieert
 # zes competenties (C1..C6) met een rubric en een opbouwtabel; elk hoofdstuk
@@ -275,6 +293,30 @@ def chapter_notebooks(part_dir: str) -> list[Path]:
     found = sorted((BOOK / "chapters" / part_dir).glob("*.ipynb"))
     assert found, f"geen notebooks gevonden in chapters/{part_dir}"
     return found
+
+
+def sql_cell_notebooks() -> dict[str, int]:
+    """{pagina: aantal sql-db- en sql-live-cellen} voor elke notebook die de build
+    leest en zulke cellen heeft: de hoofdstukken en de overhoringen
+    (overhoringen/<naam>/*.ipynb, zoals _ext/overhoringen.py ze vindt)."""
+    notebooks = [nb for part in ("SQL", "BIG_DATA", "ERD") for nb in chapter_notebooks(part)]
+    notebooks += sorted(
+        nb for nb in (BOOK / "overhoringen").glob("*/*.ipynb") if not nb.parent.name.startswith((".", "_"))
+    )
+    found = {}
+    for notebook in notebooks:
+        rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+        count = sum(len(code_cells_tagged(rel, tag)) for tag in SQL_CELL_TAGS)
+        if count:
+            found[rel] = count
+    return found
+
+
+def notebook_lexer(rel: str) -> str | None:
+    """De lexer waarmee myst-nb de codecellen van een notebook highlight."""
+    metadata = json.loads((BOOK / f"{rel}.ipynb").read_text(encoding="utf-8")).get("metadata", {})
+    info = metadata.get("language_info") or {}
+    return info.get("pygments_lexer") or info.get("name")
 
 
 def find_phrases(text: str, patterns: list[str]) -> list[str]:
@@ -665,6 +707,26 @@ def test_sql_cells_use_only_sql_comments() -> None:
     assert not problems, "geen SQL-commentaar (gebruik -- of /* … */):\n" + "\n".join(problems)
 
 
+def test_notebooks_with_sql_cells_declare_sql_as_their_language() -> None:
+    """Issue #66 (en eerder #18): ERD hoofdstuk 1, 2, 4 en 5 hadden sql-live-cellen
+    maar declareerden python (hoofdstuk 2 zelfs de lexer ipython3). Een
+    volledige build gaf daardoor "Lexing literal_block … as "python" resulted
+    in an error" op de `—` in een commentaarregel van hoofdstuk 5, en de
+    cellen van alle vier kregen Python-kleuren. Elke notebook met sql-db- of
+    sql-live-cellen — ook een overhoring — moet SQL als lexer hebben."""
+    notebooks = sql_cell_notebooks()
+    problems = [
+        f"{rel}: lexer {notebook_lexer(rel)!r} voor {count} SQL-cellen"
+        for rel, count in notebooks.items()
+        if notebook_lexer(rel) != SQL_LEXER
+    ]
+    assert not problems, f"zet in de notebook-metadata {SQL_LANGUAGE_INFO}:\n" + "\n".join(problems)
+    # Waar de test voor bestaat: de ERD-hoofdstukken met sql-live-cellen en de
+    # overhoringtemplate, waar /overhoring nieuwe overhoringen van kopieert.
+    for rel in ("chapters/ERD/02_normalisatie", "chapters/ERD/05_de_cafetaria", "overhoringen/template/overhoring"):
+        assert rel in notebooks, f"{rel}: geen SQL-cellen gevonden, er is niets nagekeken"
+
+
 def test_first_erd_page_only_checks_that_foreign_keys_are_on() -> None:
     """ERD hoofdstuk 1, §5 (#43, #46): de cel is één controle die meteen `1`
     geeft — geen instructie meer om de instelling zelf aan te zetten. De
@@ -1033,6 +1095,28 @@ def test_html_build_lessons_have_live_cells_and_no_seed() -> None:
             if phrase not in visible:
                 problems.append(f"{rel}: niet zichtbaar: {phrase!r}")
         problems += [f"{rel}: {hit}" for hit in find_phrases(visible, DB_BROWSER_WORKFLOW)]
+    assert not problems, "\n".join(problems)
+
+
+def test_html_sql_cells_are_highlighted_as_sql() -> None:
+    """Issue #66: wat de leerling ziet — elke sql-db- en sql-live-cel op de
+    gebouwde site is als SQL gehighlight (highlight-sql), niet als Python
+    (highlight-python of highlight-ipython3, zoals in ERD hoofdstuk 1, 2, 4 en
+    5). Lege cellen laat myst-nb weg; elke pagina moet er minstens één tonen."""
+    problems = []
+    for rel in sql_cell_notebooks():
+        lexers = [
+            m["lexer"]
+            for m in HTML_CELL_LEXER.finditer(page_html(rel))
+            if {f"tag_{tag}" for tag in SQL_CELL_TAGS} & set(m["classes"].split())
+        ]
+        if not lexers:
+            problems.append(f"{rel}: geen sql-db- of sql-live-cel gevonden in de gebouwde pagina")
+        problems += [
+            f"{rel}: {n} SQL-cellen gehighlight als {lexer!r}"
+            for lexer, n in Counter(lexers).items()
+            if lexer != SQL_LEXER
+        ]
     assert not problems, "\n".join(problems)
 
 
