@@ -29,6 +29,7 @@ sphinx:                                              # Options passed on to the 
     harden_theme_storage: _ext                       # Hardt de localStorage-toegang van de gevendorde theme-scripts (consolefouten bij eerste bezoek/geblokkeerde opslag, issues #29/#26), zie _ext/harden_theme_storage.py
     vendor_mathjax: _ext                             # Laadt MathJax uit de gevendorde kopie in _static/mathjax/ i.p.v. cdn.jsdelivr.net (issue #28), zie _ext/vendor_mathjax.py
     sync_static_assets: _ext                         # Kopieert gewijzigde _static-bestanden ook bij een incrementele build (issue #54), zie _ext/sync_static_assets.py
+    overhoringen: _ext                               # Bouwt book/overhoringen/<naam>/*.ipynb als losse overhoringpagina's: niet in _toc.yml, zonder weg naar de cursus, niet in de zoekindex (issue #60), zie _ext/overhoringen.py en overhoringen/README.md
   config:
     language: nl                                     # Defines language (English) of everything except the content itself. For Dutch: replace with `nl`, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
     # Plink Labs huisstijl: de webfonts Fraunces / Hanken Grotesk / Space Mono
@@ -62,6 +63,9 @@ sphinx:                                              # Options passed on to the 
         mtextInheritFont: true                       # To typeset text within math prettier, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/index.html)
       }
     keep_warnings: false                             # Default value (line can be removed), disables showing warnings in the book, configuration part of Sphinx (https://www.sphinx-doc.org/en/master/usage/configuration.html#confval-keep_warnings)
+    # Pagina's die niet in _toc.yml staan, worden niet gebouwd. Uitzondering: de
+    # overhoringen in overhoringen/<naam>/*.ipynb, die _ext/overhoringen.py
+    # bewust los van de cursus meeneemt (issue #60, zie overhoringen/README.md).
     external_toc_exclude_missing: true               # Replace this with false if you want to build all files in the book, allowing you to refer to pages which are not included in the table of contents, configuration part of jupyterbook, configuration part of sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
     external_toc_path: "_toc.yml"                    # Default value (line can be removed), sets path to the table of contents file, configuration part of sphinx-external-toc (https://sphinx-external-toc.readthedocs.io/en/latest/intro.html)
     patch_config:

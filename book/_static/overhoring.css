@@ -1,0 +1,342 @@
+/* Overhoringpagina's (issue #60).
+
+   Alleen geladen op de pagina's in book/overhoringen/<naam>/ (per pagina
+   toegevoegd door _ext/overhoringen.py; _ext/sanitize_static_assets.py houdt
+   dit bestand van de cursuspagina's weg). Alle regels hangen bovendien aan
+   de marker html.overhoring uit _ext/templates/overhoring.html.
+
+   Doel: de leraar ziet vanop afstand of een leerling op de overhoring zit of
+   de cursus opent. Daarom oogt de hele pagina anders dan de Plink-huisstijl
+   van de cursus (warm papier #FAF7F2, ink #1B1B23, magenta): een koel blauwe
+   achtergrond over de volledige pagina, blauwe accenten in plaats van
+   magenta, en een vaste band "OVERHORING" bovenaan — ook in dark mode.
+
+   De kleuren gaan via de bestaande tokens: de --pst-*-variabelen van het
+   thema en de semantische --plink-*-tokens, waaruit sql-editors.css de
+   --sql-*-tokens van de editor afleidt. Die afleiding gebeurt op <html>
+   (:root), dus ook de overrides staan op <html>; html.overhoring[data-theme]
+   is specifieker dan de cursusregels (html[data-theme]), los van de
+   volgorde van de stylesheets. */
+
+/* ── palet: licht ─────────────────────────────────────────── */
+html.overhoring[data-theme="light"] {
+  --ov-bg: #CEE0F4;               /* koel blauw, over de hele pagina */
+  --ov-surface: #F4F8FD;          /* editorvlak, tekstvak */
+  --ov-surface-raised: #E5EEF9;   /* toolbar, doelenblok, indienbalk */
+  --ov-surface-inset: #C4D8EF;
+  --ov-text: #0B1F33;
+  --ov-text-muted: #34506D;
+  --ov-caption: #5A7390;
+  --ov-border: rgba(11, 31, 51, 0.18);
+  --ov-border-strong: rgba(11, 31, 51, 0.32);
+  --ov-accent: #0A58B0;
+  --ov-accent-press: #08468C;
+  --ov-on-accent: #FFFFFF;
+  --ov-band-bg: #0A4C98;
+  --ov-band-text: #FFFFFF;
+  --ov-band-stripe: rgba(255, 255, 255, 0.09);
+  --ov-selection: #BFD6F2;
+  --ov-active-line: rgba(11, 31, 51, 0.05);
+  --ov-run-target: rgba(10, 88, 176, 0.09);
+  --ov-tok-keyword: #0A58B0;
+  --ov-tok-plain: #26405C;
+}
+
+/* ── palet: donker ────────────────────────────────────────── */
+html.overhoring[data-theme="dark"] {
+  --ov-bg: #0C2B55;               /* verzadigd marineblauw i.p.v. de neutrale ink */
+  --ov-surface: #10325F;
+  --ov-surface-raised: #15396B;
+  --ov-surface-inset: #081E3D;
+  --ov-text: #E6F0FB;
+  --ov-text-muted: #A9C0DA;
+  --ov-caption: #7F9BBB;
+  --ov-border: rgba(230, 240, 251, 0.18);
+  --ov-border-strong: rgba(230, 240, 251, 0.32);
+  --ov-accent: #5AA9F5;
+  --ov-accent-press: #86C1FA;
+  --ov-on-accent: #04111F;
+  --ov-band-bg: #3D8FE6;          /* helder: ook in een donkere klas zichtbaar */
+  --ov-band-text: #03101E;
+  --ov-band-stripe: rgba(3, 16, 30, 0.10);
+  --ov-selection: #1D4A7D;
+  --ov-active-line: rgba(230, 240, 251, 0.06);
+  --ov-run-target: rgba(90, 169, 245, 0.14);
+  --ov-tok-keyword: #7DBDF8;
+  --ov-tok-plain: #C9D9EC;
+  color-scheme: dark;             /* radioknoppen en tekstvak in donkere stijl */
+}
+
+/* ── het palet op de tokens van thema, Plink en editor ────── */
+html.overhoring[data-theme] {
+  --overhoring-band-height: 3.25rem;
+
+  --pst-color-background: var(--ov-bg);
+  --pst-color-on-background: var(--ov-surface);
+  --pst-color-surface: var(--ov-surface-raised);
+  --pst-color-on-surface: var(--ov-text);
+  --pst-color-border: var(--ov-border);
+  --pst-color-border-muted: var(--ov-border);
+  --pst-color-text-base: var(--ov-text);
+  --pst-color-text-muted: var(--ov-text-muted);
+  --pst-heading-color: var(--ov-text);
+  --pst-color-heading-color: var(--ov-text);
+  --pst-color-primary: var(--ov-accent);
+  --pst-color-primary-bg: var(--ov-surface-inset);
+  --pst-color-primary-highlight: var(--ov-accent-press);
+  --pst-color-secondary: var(--ov-text-muted);
+  --pst-color-secondary-bg: var(--ov-surface-raised);
+  --pst-color-accent: var(--ov-accent);
+  --pst-color-accent-bg: var(--ov-surface-inset);
+  --pst-color-link: var(--ov-accent);
+  --pst-color-link-hover: var(--ov-accent-press);
+  --pst-color-inline-code: var(--ov-text);
+  --pst-color-inline-code-links: var(--ov-accent);
+  --pst-color-target: var(--ov-surface-inset);
+  --pst-color-table: var(--ov-text);
+  --pst-color-table-outer-border: var(--ov-border-strong);
+  --pst-color-table-inner-border: var(--ov-border);
+  --pst-color-table-heading-bg: var(--ov-surface-raised);
+  --pst-color-table-row-zebra-high-bg: var(--ov-surface);
+  --pst-color-table-row-zebra-low-bg: var(--ov-surface-raised);
+  --pst-color-table-row-hover-bg: var(--ov-surface-inset);
+  --pst-color-info: var(--ov-accent);
+  --pst-color-info-bg: var(--ov-surface-raised);
+  --pst-color-success: var(--ov-text-muted);
+  --pst-color-success-bg: var(--ov-surface-raised);
+  --pst-color-attention: var(--ov-accent);
+  --pst-color-attention-bg: var(--ov-surface-raised);
+  --pst-color-warning: var(--ov-accent);
+  --pst-color-warning-bg: var(--ov-surface-raised);
+  --pst-color-danger: var(--ov-accent-press);
+  --pst-color-danger-bg: var(--ov-surface-raised);
+
+  --plink-surface: var(--ov-surface);
+  --plink-surface-raised: var(--ov-surface-raised);
+  --plink-surface-inset: var(--ov-surface-inset);
+  --plink-text: var(--ov-text);
+  --plink-text-muted: var(--ov-text-muted);
+  --plink-text-caption: var(--ov-caption);
+  --plink-border: var(--ov-border);
+  --plink-border-strong: var(--ov-border-strong);
+  --plink-accent: var(--ov-accent);
+  --plink-accent-press: var(--ov-accent-press);
+  --plink-on-accent: var(--ov-on-accent);
+  --plink-focus-ring: var(--ov-accent);
+
+  /* editorkleuren zonder eigen Plink-token (zie sql-editors.css) */
+  --sql-selection: var(--ov-selection);
+  --sql-active-line: var(--ov-active-line);
+  --sql-tok-keyword: var(--ov-tok-keyword);
+  --sql-tok-plain: var(--ov-tok-plain);
+  --sql-run-target: var(--ov-run-target);
+}
+
+html.overhoring,
+html.overhoring body {
+  background-color: var(--ov-bg);
+  color: var(--ov-text);
+}
+
+/* ── band bovenaan: vast in beeld, ook boven "Groot scherm" ──
+   position: fixed en niet sticky: "Groot scherm" zet overflow: hidden op
+   <html> én <body>, waardoor een sticky band aan de (niet scrollende) body
+   blijft hangen en uit beeld verdwijnt. */
+html.overhoring {
+  scroll-padding-top: calc(var(--overhoring-band-height) + 1rem);
+}
+html.overhoring body {
+  padding-top: var(--overhoring-band-height);
+}
+.overhoring-band {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;                 /* boven de schermvullende cel (1200) en het schema (9999) */
+  box-sizing: border-box;
+  height: var(--overhoring-band-height);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0 1.25rem;
+  background-color: var(--ov-band-bg);
+  background-image: repeating-linear-gradient(
+    135deg, transparent 0 22px, var(--ov-band-stripe) 22px 44px
+  );
+  color: var(--ov-band-text);
+}
+.overhoring-band__label {
+  flex: 0 0 auto;
+  font-family: var(--plink-font-mono, monospace);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+.overhoring-band__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--plink-font-body, sans-serif);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* De band blijft zichtbaar als een cel schermvullend staat (#48) of het
+   schema open is: die vullen alleen de ruimte eronder. */
+html.overhoring .sql-live-wrap.sql-live-fullscreen {
+  top: var(--overhoring-band-height);
+}
+html.overhoring .sql-schema-overlay {
+  top: var(--overhoring-band-height);
+}
+html.overhoring .sql-schema-panel {
+  height: min(calc(95vh - var(--overhoring-band-height)), 800px);
+  margin-top: 2.5vh;
+}
+
+/* ── lay-out: alleen het artikel, gecentreerd ─────────────── */
+html.overhoring .bd-container__inner {
+  justify-content: center;
+}
+html.overhoring .bd-main {
+  flex-grow: 0;
+  width: 100%;
+  max-width: 62rem;
+}
+html.overhoring .bd-main .bd-content .bd-article-container {
+  max-width: none;
+  padding-top: 1.5rem;
+}
+
+/* "Download mijn antwoorden" is de enige indienknop: de balk "Mijn werk" van
+   de editor (queries, databank) staat hier niet, anders twijfelen leerlingen
+   wat ze moeten indienen. Queries blijven wel per cel bewaard (#14). */
+html.overhoring .sql-download-bar {
+  display: none !important;
+}
+
+/* ── doelen en vragen ─────────────────────────────────────── */
+html.overhoring section#doelen {
+  margin: 1.25rem 0 2rem;
+  padding: 0.75rem 1.25rem 0.5rem;
+  border-left: 6px solid var(--ov-accent);
+  border-radius: 8px;
+  background: var(--ov-surface-raised);
+}
+html.overhoring section#doelen > h2 {
+  margin-top: 0.25rem;
+}
+html.overhoring section[id^="vraag-"] {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--ov-border-strong);
+}
+
+/* ── antwoorden: open vraag en meerkeuze ──────────────────── */
+.overhoring-answer {
+  margin: 1rem 0 1.5rem;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--ov-border-strong);
+  border-radius: 8px;
+  background: var(--ov-surface);
+}
+.overhoring-answer__label {
+  display: block;
+  float: left;                    /* legend binnen de rand, niet erop */
+  width: 100%;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  font-family: var(--plink-font-mono, monospace);
+  font-size: var(--plink-label, 0.75rem);
+  letter-spacing: var(--plink-label-tracking, 0.14em);
+  text-transform: uppercase;
+  color: var(--ov-text-muted);
+}
+.overhoring-open__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--ov-border-strong);
+  border-radius: 6px;
+  background: var(--ov-surface-raised);
+  color: var(--ov-text);
+  font: inherit;
+  line-height: 1.5;
+}
+.overhoring-open__input:focus-visible,
+.overhoring-mc__option input:focus-visible {
+  outline: 2px solid var(--ov-accent);
+  outline-offset: 2px;
+}
+.overhoring-mc__option {
+  clear: both;
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  margin: 0.15rem 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.overhoring-mc__option:hover {
+  background: var(--ov-surface-raised);
+}
+.overhoring-mc__option input {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--ov-accent);
+}
+
+/* ── indienen ─────────────────────────────────────────────── */
+.overhoring-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin: 3rem 0 4rem;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--ov-accent);
+  border-radius: 8px;
+  background: var(--ov-surface-raised);
+}
+.overhoring-submit__note {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+.overhoring-submit__button {
+  flex: 0 0 auto;
+  padding: 0.65rem 1.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ov-accent);
+  color: var(--ov-on-accent);
+  font-family: var(--plink-font-body, sans-serif);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.overhoring-submit__button:hover {
+  background: var(--ov-accent-press);
+}
+.overhoring-submit__button:focus-visible {
+  outline: 2px solid var(--ov-text);
+  outline-offset: 2px;
+}
+.overhoring-submit__status {
+  flex-basis: 100%;
+  margin: 0;
+  font-family: var(--plink-font-mono, monospace);
+  font-size: 0.8125rem;
+  color: var(--ov-text-muted);
+}
+.overhoring-submit__status.is-error {
+  color: var(--ov-accent-press);
+  font-weight: 700;
+}
