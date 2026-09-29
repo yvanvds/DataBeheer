@@ -5,7 +5,8 @@ interactieve cellen (issue #43), de foreign keys die de site-editor zelf
 aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
 (issue #49), de knop die een cel schermvullend maakt (issue #48), geen
 LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65),
-SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66)
+SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66),
+canonieke links naar de site van main in /main/ (issue #67)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -218,6 +219,14 @@ AI_LEERPLAN_QUOTES = [
     "Kritisch nadenken over en argumenten afwegen zoals in een dialoog, een gedachtewisseling, een paper",
 ]
 
+# Canonieke adressen (issue #67): de TeachBooks-deploy zet elke branch in een
+# eigen map en main in /DataBeheer/main/. Een canonieke link zonder /main/
+# geeft op GitHub Pages een 404 die pas met JavaScript doorverwijst.
+SITE = "https://yvanvds.github.io/DataBeheer/main/"
+# Pagina's die zeker een canonieke link moeten hebben: de intro, een les en
+# een overhoring (die een eigen paginasjabloon heeft, zie _ext/overhoringen.py).
+CANONICAL_PAGES = ["intro.html", "chapters/SQL/01_Starten_met_sql.html", "overhoringen/template/overhoring.html"]
+
 
 class Skip(Exception):
     """Test overgeslagen (zonder pytest)."""
@@ -235,6 +244,12 @@ def load_toc() -> dict:
     import yaml
 
     return yaml.safe_load((BOOK / "_toc.yml").read_text(encoding="utf-8"))
+
+
+def load_config() -> dict:
+    import yaml
+
+    return yaml.safe_load((BOOK / "_config.yml").read_text(encoding="utf-8"))
 
 
 def toc_pages(part_index: int) -> list[str]:
@@ -507,6 +522,11 @@ def test_toc_files_exist() -> None:
     for part in load_toc()["parts"]:
         walk(part["chapters"])
     assert not missing, f"in _toc.yml maar niet op schijf: {missing}"
+
+
+def test_html_baseurl_is_the_main_site() -> None:
+    baseurl = load_config()["sphinx"]["config"]["html_baseurl"]
+    assert baseurl == SITE, f"html_baseurl is {baseurl!r}, verwacht {SITE!r}: main staat in /main/ (issue #67)"
 
 
 def test_intro_lists_parts_in_toc_order() -> None:
@@ -1036,6 +1056,24 @@ def test_html_sidebar_lists_parts_in_order() -> None:
         for c in re.findall(r'class="caption-text">(.*?)</span>', page_html("intro"))
     ]
     assert captions == EXPECTED_PARTS, f"zijbalk toont de delen als {captions}"
+
+
+def test_html_canonical_links_point_to_the_page_on_the_main_site() -> None:
+    """Elke canonieke link wijst naar het eigen adres van de pagina onder
+    /DataBeheer/main/ (issue #67): het adres zonder /main/ is een 404."""
+    page_html("intro")  # slaat over zonder build
+    found, problems = [], []
+    for page in sorted(HTML.rglob("*.html")):
+        rel = page.relative_to(HTML).as_posix()
+        hrefs = re.findall(r'<link rel="canonical" href="([^"]*)"', page.read_text(encoding="utf-8"))
+        if not hrefs:
+            continue
+        found.append(rel)
+        if hrefs != [SITE + rel]:
+            problems.append(f"{rel}: {hrefs}, verwacht {SITE + rel}")
+    missing = [rel for rel in CANONICAL_PAGES if rel not in found]
+    assert not missing, f"pagina's zonder canonieke link: {missing}"
+    assert not problems, "canonieke links buiten de site van main:\n" + "\n".join(problems)
 
 
 def test_html_prev_next_flow_between_parts() -> None:

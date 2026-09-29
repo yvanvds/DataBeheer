@@ -208,6 +208,16 @@ def test_links_point_to_the_main_site_and_to_main_on_github() -> None:
     }
 
 
+def test_link_to_the_quiz_is_its_canonical_address() -> None:
+    """De link die de skill geeft, is het canonieke adres dat de build op de
+    pagina zet: html_baseurl in book/_config.yml (issue #67)."""
+    import yaml
+
+    config = yaml.safe_load((ROOT / "book" / "_config.yml").read_text(encoding="utf-8"))
+    baseurl = config["sphinx"]["config"]["html_baseurl"]
+    assert check.links("sql-h1-h2")["overhoring"] == f"{baseurl}overhoringen/sql-h1-h2/overhoring.html"
+
+
 def test_ten_questions_is_allowed(tmp_path) -> None:
     types = ["sql-live", "overhoring-open", "overhoring-mc"] * 3 + ["sql-live"]
     kop = "| Leerdoel | " + " | ".join(f"V{n}" for n in range(1, 11)) + " |\n|---|" + "---|" * 10 + "\n"
