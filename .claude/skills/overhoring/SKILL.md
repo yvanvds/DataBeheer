@@ -156,8 +156,14 @@ om een fout weg te werken.
    de cursus zelf bouwt zonder warnings. Gaat een warning over een
    cursuspagina, dan is dat een regressie buiten de overhoring: noem ze, maar
    los ze hier niet op.
-4. `.venv/Scripts/python -m pytest tests/test_overhoringen.py tests/test_overhoring_skill.py`
-   is groen: die controleren ook de gebouwde pagina en de map.
+4. `TESTS_FAIL_ON_SKIP=1 .venv/Scripts/python -m pytest tests/test_overhoringen.py tests/test_overhoring_skill.py`
+   (in PowerShell eerst `$env:TESTS_FAIL_ON_SKIP=1`) is groen: die controleren
+   ook de map, de gebouwde pagina en de pagina in Chromium (elke SQL-editor
+   draait op gadgetshop.db, elk antwoordvak werkt, **Download mijn antwoorden**
+   bevat elke vraag). Zonder `TESTS_FAIL_ON_SKIP` slaan de Chromium-tests
+   zichzelf stil over als Playwright of Chromium ontbreekt
+   (`playwright install chromium`), en lijkt de controle groen zonder dat de
+   pagina ooit geopend werd.
 
 ## 6. Publiceren (standaard)
 

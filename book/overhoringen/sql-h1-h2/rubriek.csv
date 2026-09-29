@@ -1,0 +1,37 @@
+"Upload deze .csv in Microsoft Teams als een rubriek voor de beste bewerkingsmogelijkheden."
+
+"Overhoring SQL 1 en 2","100"
+"Beoordeling per leerdoel, over alle vragen heen. Kerndoelen wegen dubbel."
+""
+,"Volledig behaald","100","Deels behaald","50","Niet behaald","0"
+"SQL1.1 – Kolommen opvragen met SELECT … FROM","De juiste tabel na FROM en precies de gevraagde kolommen, correct gespeld.",,"De juiste tabel, maar een kolom te veel of te weinig, * waar enkele kolommen gevraagd zijn, of een tikfout in een kolomnaam.",,"Een verkeerde tabel, of geen bruikbare SELECT … FROM.",
+"8"
+"SQL1.2 – Rijen filteren met één voorwaarde","De juiste kolom, operator en waarde in WHERE, met tekst tussen enkele aanhalingstekens: precies de gevraagde rijen.",,"Filtert op de juiste kolom, maar met een verkeerde operator (bv. > waar < bedoeld is) of tekst zonder aanhalingstekens.",,"Geen WHERE, of een voorwaarde op een kolom die niets met de vraag te maken heeft.",
+"8"
+"SQL1.3 – Voorwaarden combineren met AND en OR","AND en OR juist gekozen, met haakjes rond de OR-voorwaarden waar AND en OR samen staan.",,"De juiste voorwaarden, maar haakjes vergeten bij AND en OR, of één keer AND waar OR nodig is (of omgekeerd).",,"Voorwaarden niet gecombineerd, of een combinatie die telkens andere rijen geeft dan gevraagd.",
+"8"
+"SQL1.4 – Resultaten sorteren met ORDER BY","Op de juiste kolom(men) en in de juiste richting (ASC of DESC) gesorteerd, ook met een tweede sorteerkolom.",,"Sorteert, maar in de verkeerde richting of zonder de gevraagde tweede sorteerkolom.",,"Geen ORDER BY waar een volgorde gevraagd is, of op een kolom die niets met de vraag te maken heeft.",
+"8"
+"SQL1.5 – Een top-N opvragen met LIMIT","LIMIT met het gevraagde aantal, na een ORDER BY in de juiste richting.",,"LIMIT gebruikt, maar met een verkeerd aantal, of de sortering ervoor ontbreekt of staat in de verkeerde richting.",,"Geen LIMIT: alle rijen getoond in plaats van de gevraagde top.",
+"7"
+"SQL1.6 – Unieke waarden tonen met DISTINCT","DISTINCT op precies de gevraagde kolom: elke waarde staat één keer in het resultaat.",,"DISTINCT gebruikt, maar met een extra kolom erbij, zodat waarden toch meer dan eens voorkomen.",,"Geen DISTINCT: dubbele waarden in het resultaat.",
+"7"
+"SQL1.7 – Berekende kolommen maken met AS","De juiste berekening in SELECT, met de gevraagde kolomnaam na AS.",,"De juiste berekening zonder AS of met een andere kolomnaam, of een kleine rekenfout.",,"Geen berekende kolom, of een berekening die niet overeenkomt met de vraag.",
+"7"
+"SQL1.8 – Tekst samenvoegen met ||","Tekst samengevoegd met ||, met een spatie ertussen, en juist uitgelegd waarom + dat in SQLite niet doet.",,"Weet dat || nodig is, maar vergeet de spatie, of de uitleg over + met tekst ontbreekt of is onvolledig.",,"Blijft + gebruiken voor tekst, of geen bruikbare samenvoeging en geen uitleg.",
+"4"
+"SQL1.9 – Een onbekend schema lezen","Vindt zelf in het schema de juiste tabel en kolommen, ook als de vraag ze in het Nederlands omschrijft.",,"Meestal de juiste kolommen, maar één keer een verkeerde of verzonnen kolomnaam.",,"Tabel- of kolomnamen die niet in de databank bestaan, waardoor de query's niet werken.",
+"4"
+"SQL2.1 – Ontbrekende waarden filteren met IS NULL","IS NULL en IS NOT NULL juist gebruikt, voor ontbrekende en voor ingevulde waarden.",,"IS NULL juist, maar de voorwaarde voor een ingevulde waarde ontbreekt of is fout (bv. <> NULL).",,"= NULL of = 'NULL', of geen filter op de ontbrekende waarde.",
+"7"
+"SQL2.2 – Tekstpatronen zoeken met LIKE","LIKE met het juiste patroon: % voor willekeurig veel tekens, _ voor precies één teken.",,"LIKE gebruikt, maar een jokerteken op de verkeerde plaats, of % waar _ nodig is (of omgekeerd).",,"= met jokertekens, of geen patroon waar een deel van de tekst gezocht wordt.",
+"7"
+"SQL2.3 – Filteren op een lijst met IN","IN met alle gevraagde waarden, tussen haakjes, gescheiden door komma's en tekst tussen aanhalingstekens.",,"Het juiste resultaat met een reeks OR's in plaats van IN, of IN met een vergeten of fout gespelde waarde.",,"Geen filter op de lijst, of = met meerdere waarden tegelijk.",
+"7"
+"SQL2.4 – Een bereik filteren met BETWEEN","BETWEEN … AND … op de juiste kolom, met de gevraagde grenzen, de kleinste eerst.",,"Het juiste bereik met twee vergelijkingen in plaats van BETWEEN, of BETWEEN met een verkeerde grens.",,"Geen bereik: maar één grens, of een verkeerde kolom.",
+"7"
+"SQL2.5 – Datums filteren als tekst","Datums als tekst in de vorm YYYY-MM-DD juist gefilterd, met LIKE of met een vergelijking, tussen aanhalingstekens.",,"Het idee klopt, maar met een fout in de vorm (bv. een maand zonder voorloopnul) of een grens die een dag te veel of te weinig meeneemt.",,"Een datum zonder aanhalingstekens of als getal, of niet gefilterd op de datum.",
+"7"
+"SQL2.6 – Clausules in de juiste volgorde","SELECT – FROM – WHERE – ORDER BY – LIMIT in de juiste volgorde, ook in een query met al die delen.",,"De juiste clausules, maar één ervan op de verkeerde plaats.",,"Clausules door elkaar, zodat de query een foutmelding geeft.",
+"4"
+v.11p

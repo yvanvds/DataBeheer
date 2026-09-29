@@ -13,7 +13,8 @@ Drie lagen, net als tests/test_book_structure.py en tests/test_sql_editor.py:
 - e2e-tests in een echte Chromium (Playwright): de achtergrond verschilt van
   de cursus (light en dark), de band blijft in beeld, de pagina opent
   gadgetshop.db (het schema toont haar tabellen) en "Download mijn
-  antwoorden" levert een Markdown-bestand met de drie vragen en hun antwoord.
+  antwoorden" levert een Markdown-bestand met de drie vragen en hun antwoord;
+  en elke echte overhoring werkt van de eerste tot de laatste vraag (#64).
   De Node-unittests van book/_static/overhoring-markdown.js
   (tests/overhoring-markdown.test.mjs) lopen hier ook.
 
@@ -596,6 +597,73 @@ def test_quiz_works_when_storage_is_blocked(browser, site_url, tmp_path) -> None
         assert f"```sql\n{query}\n```" in md
         assert "> De query toont elk land één keer." in md
         assert f"- [x] {choice}" in md
+        assert errors == [], errors
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize(
+    "docname", [path.relative_to(BOOK).with_suffix("").as_posix() for path in quiz_notebooks()]
+)
+def test_every_quiz_page_works_from_first_to_last_question(browser, site_url, tmp_path, docname) -> None:
+    """Elke overhoring, niet alleen de template (#64): per vraag het juiste
+    antwoordvak; elke SQL-editor voert zijn eigen query uit op gadgetshop.db;
+    elke meerkeuzevraag is een eigen groep (een keuze bij de ene vraag wist die
+    bij een andere niet); en "Download mijn antwoorden" bevat alle vragen in
+    volgorde, elk met het antwoord. De antwoorden zijn neutraal: geen
+    modeloplossingen in de repo."""
+    quiz, source_errors = overhoringen.read_quiz(BOOK / f"{docname}.ipynb")
+    assert source_errors == [], source_errors
+    questions = quiz["questions"]
+    context, page, errors = open_page(browser, site_url + f"{docname}.html")
+    try:
+        wait_ready(page)
+        expect(page.get_by_role("heading", level=1, name=quiz["title"], exact=True)).to_be_visible()
+        editors = page.locator(".sql-live-wrap")
+        expect(editors).to_have_count(sum(q["type"] == "sql" for q in questions))
+        expect(page.locator(".overhoring-open__input")).to_have_count(sum(q["type"] == "open" for q in questions))
+        options = page.locator(".overhoring-mc__option")
+        expect(options).to_have_count(sum(len(q.get("options", [])) for q in questions))
+
+        answers: dict[int, str] = {}
+        chosen: list[int] = []  # index van elke gekozen optie op de pagina
+        sql = open_ = option = 0
+        for q in questions:
+            n = q["number"]
+            if q["type"] == "sql":
+                # Per vraag een andere telling: zo draait elke editor zijn eigen query.
+                query = f"SELECT COUNT(*) AS n\nFROM brands\nWHERE brand_id >= {n};"
+                page.evaluate("([i, sql]) => window.sqlLive.editors[i].setValue(sql)", [sql, query])
+                editors.nth(sql).locator("button.run").click()
+                expect(editors.nth(sql).locator(".sql-live-output td")).to_have_text([str(quiz_db_count(query))])
+                answers[n] = f"```sql\n{query}\n```"
+                sql += 1
+            elif q["type"] == "open":
+                text = f"Mijn antwoord op vraag {n}."
+                page.locator(".overhoring-open__input").nth(open_).fill(text)
+                answers[n] = f"> {text}"
+                open_ += 1
+            else:
+                pick = n % len(q["options"])
+                options.nth(option + pick).click()
+                chosen.append(option + pick)
+                answers[n] = "\n".join(
+                    f"- [{'x' if k == pick else ' '}] {o}" for k, o in enumerate(q["options"])
+                )
+                option += len(q["options"])
+        for index in chosen:
+            expect(options.nth(index).locator("input")).to_be_checked()
+
+        name, md = download_answers(page, tmp_path)
+        assert name == f"{overhoringen.quiz_id(docname)}-antwoorden.md"
+        assert md.startswith(f"# {quiz['title']} — antwoorden\n"), md[:120]
+        assert f"## Doelen\n\n{quiz['doelen']}\n" in md
+        positions = [md.index(f"## {q['heading']}\n\n{q['text']}\n") for q in questions]
+        assert positions == sorted(positions), "de vragen staan niet in volgorde"
+        sections = re.split(r"^## Vraag \d+.*$", md, flags=re.MULTILINE)[1:]
+        assert len(sections) == len(questions), md
+        for q, section in zip(questions, sections):
+            assert f"**Antwoord:**\n\n{answers[q['number']]}" in section, (q["heading"], section)
         assert errors == [], errors
     finally:
         context.close()
