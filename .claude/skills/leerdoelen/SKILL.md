@@ -34,9 +34,9 @@ Argumenten:
      toepassingspagina's (bv. dezelfde query's schrijven op een onbekende
      databank door het schema te lezen).
    - Laat weg: wat alleen terloops of in een uitgecommentarieerd voorbeeld
-     opduikt en pas in een later hoofdstuk uitgelegd wordt (bv. `LIKE` in
-     SQL H1 §4 is stof van H2; foreign keys in H1 §2: "daar komen we later op
-     terug"), ook als een oefening het al vraagt (H1 §4 oef. 3, #65), en de
+     opduikt en pas in een later hoofdstuk uitgelegd wordt (bv. foreign keys
+     in SQL H1 §2: "daar komen we later op terug"), ook als een oefening het
+     al vraagt (zo vroeg H1 §4 oef. 3 tot #65 om `LIKE`, stof van H2), en de
      uitleg over de website zelf (Run, Schema, Reset db, Mijn werk). Noteer
      wat je bewust weglaat bij `Niet opgenomen:`.
    - Toets: kan een leerling het doel halen met alleen dit hoofdstuk en de
@@ -82,7 +82,7 @@ Voorbeeld (ingekort; een echt hoofdstuk heeft 5 à 10 doelen):
 
 Bron: `book/chapters/SQL/01_Starten_met_sql.ipynb`, `book/chapters/SQL/01b_AdventureWorks.ipynb`
 
-Niet opgenomen: `LIKE` (alleen in een voorbeeld in §4, uitgelegd in SQL 2), foreign keys (SQL 3).
+Niet opgenomen: foreign keys (alleen genoemd in §2, uitgelegd in SQL 3), de uitleg over de editor (Run, Schema, Reset db, Mijn werk).
 
 ### SQL1.1 — Kolommen opvragen met SELECT … FROM
 - Doel: De leerling kan met `SELECT … FROM` gekozen kolommen of met `*` alle kolommen uit één tabel opvragen.

@@ -3,7 +3,8 @@ de plaats van de DB Browser-installatie (issues #33 en #42), de bouwlessen van
 het ERD-deel op de site-editor (issue #42), de SQL-commentaarregels in de
 interactieve cellen (issue #43), de foreign keys die de site-editor zelf
 aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
-(issue #49), de knop die een cel schermvullend maakt (issue #48)
+(issue #49), de knop die een cel schermvullend maakt (issue #48), geen
+LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -746,6 +747,55 @@ def test_sql_cell_columns_exist_in_the_table_they_are_read_from() -> None:
     # in de cellen zelf en leest met aliassen uit de seed, dus daar is elke
     # verwijzing na te gaan.
     assert "chapters/ERD/02_normalisatie" in checked, f"er is niets nagekeken: {checked}"
+
+
+# Patroonzoeken met LIKE (issue #65) is stof van SQL hoofdstuk 2 (§2, met de
+# jokertekens % en _). Toch vroeg oefening 3 in §4 van hoofdstuk 1 de
+# producten "die 'Laptop' in hun naam hebben": in webshop.db heten die Pro
+# Laptop 14, Gaming Laptop X, … en er is geen categorie Laptops, dus dat
+# lukte alleen met LIKE '%Laptop%'. Het voorbeeld erboven gebruikte LIKE
+# zonder uitleg van %. Zelfde soort fout als #51 (§8 vroeg || en GROUP BY).
+LIKE_CHAPTER = "chapters/SQL/02_Meer_opties_voor_WHERE"
+LIKE_KEYWORD = r"\bLIKE\b"
+# Zo vraagt een opgave om een stuk tekst te zoeken (zo staan de
+# LIKE-oefeningen in hoofdstuk 2 geformuleerd).
+PATTERN_SEARCH_PHRASES = [
+    r"\bin (hun|zijn|haar|de) \w*naam\b",  # 'Laptop' in hun naam
+    r"\bbevat(ten)?\b",
+    r"\bbegin(t|nen) met\b",
+    r"\bstart(en)? met\b",
+    r"\beindig(t|en) op\b",
+]
+
+
+def sql_comment_lines(rel: str) -> str:
+    """De `--`-regels van de sql-live-cellen van een pagina: de opgaven en de
+    uitleg bij de voorbeelden (een .md-pagina heeft er geen)."""
+    if not (BOOK / f"{rel}.ipynb").is_file():
+        return ""
+    lines = (line for sql in code_cells_tagged(rel, "sql-live") for line in sql.splitlines())
+    return "\n".join(line for line in lines if line.lstrip().startswith("--"))
+
+
+def test_nothing_before_sql_chapter_2_uses_or_asks_for_like() -> None:
+    """Issue #65: geen pagina vóór het hoofdstuk dat LIKE uitlegt, gebruikt
+    LIKE — niet in de tekst, niet in een (uitgecommentarieerd) voorbeeld — en
+    geen opgave vraagt om een stuk tekst te zoeken. Wat §4 van hoofdstuk 1
+    vraagt, moet op te lossen zijn met wat §4 aanleert: vergelijken, AND, OR,
+    NOT en haakjes."""
+    problems = []
+    for rel in pages_before(LIKE_CHAPTER):
+        sql = "\n".join(code_cells_tagged(rel, "sql-live")) if (BOOK / f"{rel}.ipynb").is_file() else ""
+        problems += [f"{rel}: {hit}" for hit in find_phrases(source_of(rel) + "\n" + sql, [LIKE_KEYWORD])]
+        problems += [f"{rel} (opgave): {hit}" for hit in find_phrases(sql_comment_lines(rel), PATTERN_SEARCH_PHRASES)]
+    assert not problems, "LIKE wordt pas in hoofdstuk 2 uitgelegd:\n" + "\n".join(problems)
+    # Hoofdstuk 2 legt LIKE wél uit, en de formuleringen hierboven vinden er de
+    # LIKE-oefeningen — ook de laptopoefening, die van hoofdstuk 1 hierheen verhuisde.
+    assert re.search(r"^## \d+\. Patronen zoeken met LIKE$", source_of(LIKE_CHAPTER), flags=re.MULTILINE), (
+        f"{LIKE_CHAPTER}: geen paragraaf 'Patronen zoeken met LIKE'"
+    )
+    hits = find_phrases(sql_comment_lines(LIKE_CHAPTER), PATTERN_SEARCH_PHRASES)
+    assert any("'Laptop' in hun naam" in hit for hit in hits), f"{LIKE_CHAPTER}: de laptopoefening staat niet bij de LIKE-oefeningen"
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
