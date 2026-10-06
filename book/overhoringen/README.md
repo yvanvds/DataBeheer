@@ -25,7 +25,8 @@ book/overhoringen/
 └── <naam>/                   één map per overhoring, <naam> is een slug (bv. sql-h1-h2)
     ├── overhoring.ipynb      de overhoring
     ├── leerdoelen.md         voor de leraar (geen pagina): de leerdoelen en de dekkingstabel
-    └── rubriek.csv           voor Teams (geen pagina), gemaakt met /rubriek
+    ├── rubriek.csv           voor Teams (geen pagina), gemaakt met /rubriek
+    └── Submitted files/      alleen lokaal, niet in de repo (.gitignore): ingediend werk uit Teams
 ```
 
 De skill /overhoring (`.claude/skills/overhoring/SKILL.md`, issue #63) maakt
@@ -52,6 +53,15 @@ voor ze naar Teams gaat.
 - **Een nieuwe overhoring** vraagt geen aanpassing van de configuratie: maak de
   map, kopieer `template/overhoring.ipynb` erin en pas de cellen aan. Zet de
   pagina **niet** in `_toc.yml`.
+- **Ingediend werk hoort niet in de repo.** De repo en de site zijn publiek en
+  wat leerlingen indienen zijn persoonsgegevens. Het blijft in Teams (de
+  opdracht bewaart elke inzending, met de beoordeling volgens de rubriek); een
+  kopie om na te kijken zet je buiten de repo, bv. in OneDrive of een eigen
+  map, nooit in `book/overhoringen/`. Download je het toch naast de
+  overhoring, dan krijg je van Teams een map `Submitted files`: die staat in
+  `.gitignore` (git neemt ze nooit op), wordt geen pagina (de build neemt
+  alleen notebooks rechtstreeks in `<naam>/` op), en `check_overhoring.py` en
+  de tests slaan ze over (issue #75).
 
 ## Formaat van de notebook
 

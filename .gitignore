@@ -118,3 +118,8 @@ pyproject.toml
 
 # node
 node_modules/
+
+# Ingediend werk van een overhoring, gedownload uit Teams (issue #75):
+# leerlingengegevens, nooit in de publieke repo of op de site. Zie
+# book/overhoringen/README.md.
+book/overhoringen/*/Submitted files/

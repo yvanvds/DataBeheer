@@ -7,8 +7,12 @@ aanzet (issue #46), de kolommen die de lescellen uit hun brontabel lezen
 LIKE in SQL hoofdstuk 1 zolang hoofdstuk 2 het niet uitgelegd heeft (issue #65),
 SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66),
 canonieke links naar de site van main in /main/ (issue #67),
-BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68)
-en de verankering van de onderzoekscompetenties
+BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68),
+JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
+hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
+de uitleg van dat hoofdstuk zonder taalfouten (issue #74) en dezelfde
+controle over alle hoofdstukken, met spaties op het einde van een regel erbij
+(issue #76), en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
 
@@ -951,6 +955,282 @@ def test_between_example_with_and_keeps_both_boundaries() -> None:
     assert not problems, f"{BETWEEN_CHAPTER} §4 BETWEEN:\n" + "\n".join(problems)
 
 
+# JOIN-oefeningen (issue #73): oefening 3 van §2 in SQL hoofdstuk 3 vroeg "het
+# totaalbedrag van de bestelling (quantity * unit_price)". Een bestelling heeft
+# meerdere order_lines, dus dat totaal vraagt SUM en GROUP BY — stof van
+# hoofdstuk 4 — en er waren maar vier oefeningen op INNER JOIN en drie op LEFT
+# JOIN. Elke oefening van §2 en §3 moet op te lossen zijn met JOIN plus wat
+# hoofdstuk 1 en 2 aanleren (WHERE, ORDER BY, LIKE, IN, IS NULL, ...) en rijen
+# opleveren op webshop.db. De modeloplossingen staan hier en niet in het
+# hoofdstuk (dat ziet de leerling); de test draait ze op de seed van de pagina.
+# Elke oplossing is aan haar opgave gekoppeld via een stuk tekst dat in de
+# opgave moet staan, zodat een opgave niet stilletjes verandert zonder dat
+# iemand de oplossing nakijkt.
+JOIN_CHAPTER = "chapters/SQL/03_JOIN"
+INNER_JOIN_HEADING = re.compile(r"^## \d+\. INNER JOIN\s*$", flags=re.MULTILINE)
+LEFT_JOIN_HEADING = re.compile(r"^## \d+\. LEFT JOIN\s*$", flags=re.MULTILINE)
+# Een opgave in een oefeningencel: `--- 1. Toon ...` (zo staan ze in elk SQL-hoofdstuk).
+EXERCISE_LINE = re.compile(r"^--- (\d+)\. (.+)$", flags=re.MULTILINE)
+# Groeperen en samenvatten komen pas in hoofdstuk 4 en 5.
+GROUPING_KEYWORDS = r"\b(?:GROUP\s+BY|HAVING|SUM|COUNT|AVG|MIN|MAX)\b"
+# Zo vraagt een opgave om over meerdere rijen te rekenen (het totaalbedrag van
+# een bestelling, het aantal bestellingen per klant, ...).
+GROUPING_PHRASES = [
+    r"\btotaalbedrag\b",
+    r"\bin totaal\b",
+    r"\bsom\b",
+    r"\bgemiddeld",
+    r"\bhoeveel\b",
+    r"\baantal\b",
+]
+# (stuk van de opgave, modeloplossing), in de volgorde van de opgaven.
+INNER_JOIN_EXERCISES = [
+    (
+        "samen met de naam van het product",
+        """SELECT ol.quantity, ol.unit_price, p.name
+           FROM order_lines ol
+           INNER JOIN products p ON ol.product_id = p.product_id;""",
+    ),
+    (
+        "de stad van de klant en de order datum",
+        """SELECT o.order_id, c.city, o.order_date
+           FROM orders o
+           INNER JOIN customers c ON o.customer_id = c.customer_id;""",
+    ),
+    (
+        "klanten uit Gent",
+        """SELECT c.first_name, c.last_name, o.order_date
+           FROM customers c
+           INNER JOIN orders o ON c.customer_id = o.customer_id
+           WHERE c.city = 'Gent'
+           ORDER BY o.order_date DESC;""",
+    ),
+    (
+        "Gaming producten bestelden",
+        """SELECT c.first_name, c.last_name, p.name
+           FROM customers c
+           INNER JOIN orders o ON c.customer_id = o.customer_id
+           INNER JOIN order_lines ol ON o.order_id = ol.order_id
+           INNER JOIN products p ON ol.product_id = p.product_id
+           WHERE p.category = 'Gaming';""",
+    ),
+    (
+        "'Monitor' in de naam",
+        """SELECT o.order_id, o.order_date, p.name, ol.quantity
+           FROM orders o
+           INNER JOIN order_lines ol ON o.order_id = ol.order_id
+           INNER JOIN products p ON ol.product_id = p.product_id
+           WHERE p.name LIKE '%Monitor%' AND o.order_date LIKE '2025-%'
+           ORDER BY o.order_date;""",
+    ),
+    (
+        "klanten uit Brugge of Oostende",
+        """SELECT c.first_name, c.last_name, c.city, p.name
+           FROM customers c
+           INNER JOIN orders o ON c.customer_id = o.customer_id
+           INNER JOIN order_lines ol ON o.order_id = ol.order_id
+           INNER JOIN products p ON ol.product_id = p.product_id
+           WHERE c.city IN ('Brugge', 'Oostende') AND p.category = 'Audio'
+           ORDER BY c.last_name, c.first_name;""",
+    ),
+]
+LEFT_JOIN_EXERCISES = [
+    (
+        "klanten die nooit een bestelling plaatsten",
+        """SELECT c.first_name, c.last_name
+           FROM customers c
+           LEFT JOIN orders o ON c.customer_id = o.customer_id
+           WHERE o.order_id IS NULL;""",
+    ),
+    (
+        "producten die nooit besteld werden",
+        """SELECT p.name, p.unit_price
+           FROM products p
+           LEFT JOIN order_lines ol ON p.product_id = ol.product_id
+           WHERE ol.order_line_id IS NULL;""",
+    ),
+    (
+        "bestellingen zonder order_lines",
+        """SELECT o.order_id, o.order_date
+           FROM orders o
+           LEFT JOIN order_lines ol ON o.order_id = ol.order_id
+           WHERE ol.order_line_id IS NULL;""",
+    ),
+    (
+        "categorie 'Printers'",
+        """SELECT p.name, ol.order_id
+           FROM products p
+           LEFT JOIN order_lines ol ON p.product_id = ol.product_id
+           WHERE p.category = 'Printers'
+           ORDER BY p.name;""",
+    ),
+    (
+        "klanten uit Antwerpen die nooit een bestelling plaatsten",
+        """SELECT c.first_name, c.last_name, c.city
+           FROM customers c
+           LEFT JOIN orders o ON c.customer_id = o.customer_id
+           WHERE c.city = 'Antwerpen' AND o.order_id IS NULL
+           ORDER BY c.last_name;""",
+    ),
+]
+# De LEFT JOIN-opgave die de rijen zónder match juist toont (NULL in order_id)
+# in plaats van erop te filteren; de andere vier filteren met IS NULL.
+LEFT_JOIN_SHOWING_NULL = 4
+JOIN_SECTIONS = [
+    ("INNER JOIN", INNER_JOIN_HEADING, INNER_JOIN_EXERCISES),
+    ("LEFT JOIN", LEFT_JOIN_HEADING, LEFT_JOIN_EXERCISES),
+]
+
+
+def join_exercises(heading: re.Pattern) -> list[tuple[int, str]]:
+    """[(nummer, opgave)] uit de oefeningencel van een paragraaf van het
+    JOIN-hoofdstuk: de ene sql-live-cel met `--- N.`-regels. Die cel is
+    startcode voor de leerling en bevat verder niets dan lege regels."""
+    live = [
+        "".join(c["source"])
+        for c in section_cells(JOIN_CHAPTER, heading)
+        if c["cell_type"] == "code" and "sql-live" in c.get("metadata", {}).get("tags", [])
+    ]
+    cells = [sql for sql in live if EXERCISE_LINE.search(sql)]
+    assert len(cells) == 1, f"{JOIN_CHAPTER}: {len(cells)} oefeningencellen onder /{heading.pattern}/, verwacht één"
+    other = [line for line in cells[0].splitlines() if line.strip() and not EXERCISE_LINE.match(line)]
+    assert not other, f"{JOIN_CHAPTER}: de oefeningencel onder /{heading.pattern}/ bevat meer dan opgaven: {other}"
+    return [(int(n), text.strip()) for n, text in EXERCISE_LINE.findall(cells[0])]
+
+
+def join_seed() -> Path:
+    """De databank van het JOIN-hoofdstuk, zoals de sql-db-cel ze opvraagt (/_static/db/webshop.db)."""
+    seeds = code_cells_tagged(JOIN_CHAPTER, "sql-db")
+    assert len(seeds) == 1, f"{JOIN_CHAPTER}: {len(seeds)} sql-db-cellen, verwacht één"
+    path = BOOK / seeds[0].strip().lstrip("/")
+    assert path.is_file(), f"{JOIN_CHAPTER}: seed {path.relative_to(ROOT)} ontbreekt"
+    return path
+
+
+def test_join_exercises_are_numbered_and_match_their_model_solutions() -> None:
+    """Issue #73: §2 heeft zes opgaven en §3 vijf, genummerd vanaf 1, en elke
+    opgave is de opgave waar de modeloplossing hieronder bij hoort."""
+    problems = []
+    for name, heading, expected in JOIN_SECTIONS:
+        found = join_exercises(heading)
+        numbers = [n for n, _ in found]
+        if numbers != list(range(1, len(expected) + 1)):
+            problems.append(f"{name}: opgaven {numbers}, verwacht 1 tot en met {len(expected)}")
+        for (n, text), (anchor, _) in zip(found, expected):
+            if anchor not in text:
+                problems.append(f"{name} oefening {n}: {anchor!r} staat niet in {text!r}")
+    assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+
+
+def test_join_exercises_ask_nothing_beyond_join_and_chapters_1_and_2() -> None:
+    """Issue #73: geen opgave in §2 of §3 vraagt om over meerdere rijen te
+    rekenen (een totaalbedrag, een aantal, een gemiddelde) — dat is groeperen,
+    stof van hoofdstuk 4 — en geen opgave rekent voor met kolommen (`*`)."""
+    problems = []
+    for name, heading, _ in JOIN_SECTIONS:
+        for n, text in join_exercises(heading):
+            problems += [f"{name} oefening {n}: {hit}" for hit in find_phrases(text, GROUPING_PHRASES)]
+            if "*" in text:
+                problems.append(f"{name} oefening {n}: rekent voor met kolommen: {text!r}")
+    assert not problems, f"{JOIN_CHAPTER}: deze opgaven vragen om te groeperen (hoofdstuk 4):\n" + "\n".join(problems)
+
+
+def test_join_model_solutions_use_join_and_return_rows_on_webshop_db() -> None:
+    """Issue #73: elke modeloplossing gebruikt de JOIN van haar paragraaf en
+    niets uit hoofdstuk 4 of 5, en geeft rijen op de seed van de pagina — een
+    opgave met een leeg antwoord leert niets. In §3 filteren vier opgaven met
+    IS NULL (en tonen dus geen NULL), en toont één opgave de rijen zonder
+    match naast de rijen mét match."""
+    con = sqlite3.connect(join_seed())
+    problems = []
+    try:
+        for name, _, exercises in JOIN_SECTIONS:
+            for n, (anchor, sql) in enumerate(exercises, 1):
+                if not re.search(rf"\b{name}\b", sql):
+                    problems.append(f"{name} oefening {n}: de oplossing gebruikt geen {name}")
+                if re.search(GROUPING_KEYWORDS, sql, flags=re.IGNORECASE):
+                    problems.append(f"{name} oefening {n}: de oplossing groepeert (hoofdstuk 4 of 5)")
+                try:
+                    rows = con.execute(sql).fetchall()
+                except sqlite3.Error as exc:
+                    problems.append(f"{name} oefening {n}: {exc}")
+                    continue
+                if not rows:
+                    problems.append(f"{name} oefening {n} ({anchor}): geen rijen op webshop.db")
+                    continue
+                with_null = [row for row in rows if None in row]
+                if name == "LEFT JOIN" and n == LEFT_JOIN_SHOWING_NULL:
+                    if not with_null or len(with_null) == len(rows):
+                        problems.append(
+                            f"{name} oefening {n}: {len(with_null)} van {len(rows)} rijen zonder match, verwacht beide soorten"
+                        )
+                elif name == "LEFT JOIN":
+                    if not re.search(r"\bIS NULL\b", sql):
+                        problems.append(f"{name} oefening {n}: de oplossing filtert niet met IS NULL")
+                    if with_null:
+                        problems.append(f"{name} oefening {n}: {len(with_null)} rijen met NULL, verwacht geen")
+                elif with_null:
+                    problems.append(f"{name} oefening {n}: {len(with_null)} rijen met NULL in een INNER JOIN")
+    finally:
+        con.close()
+    assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+
+
+# Taalfouten in de uitleg van het JOIN-hoofdstuk (issue #74): "is is", "Het
+# veldnamen", "Daarom willen bij `JOIN`" en een dubbele spatie in de
+# leerdoelen. De uitleg staat in de markdown-cellen (de oefeningen zijn
+# codecellen); de lopende tekst daarvan mag geen van die zinnen, geen dubbel
+# woordje en geen dubbele spatie bevatten. Tabelrijen en codeblokken lijnen
+# met spaties uit en tellen niet mee. Sinds issue #76 geldt dezelfde controle
+# voor alle hoofdstukken ("GROUP BY  gebruiken" in de leerdoelen van
+# hoofdstuk 4), plus spaties op het einde van een regel.
+LANGUAGE_SLIPS = [
+    r"\bis is\b",
+    r"\bHet veldnamen\b",
+    r"\bDaarom willen bij\b",
+    r"JOIN  gebruiken",
+]
+# Een woordje dat nooit tweemaal na elkaar hoort op één regel ("is is", "de de").
+# Niet "je je" (wederkerend: "kan je je afvragen") of "het het" ("vind het het
+# beste"), en hoofdlettergevoelig, want "van Van Gogh" is goed Nederlands.
+DOUBLED_WORD = r"(?-i:\b(is|de|een|we|in|van|op|en|te|met|bij|om)[ \t]+\1\b)"
+# Twee of meer spaties midden in een zin.
+DOUBLE_SPACE = r"\S {2,}\S"
+# Spaties op het einde van een regel in een markdown-cel (issue #76):
+# onzichtbaar op de pagina, maar ze maken elke diff rommelig. Ze tellen overal
+# mee, ook in codeblokken, directives en tabelrijen. Alleen precies twee
+# spaties na tekst niet: dat is in markdown een harde regelovergang.
+TRAILING_SPACE = r"(?m)(?<=\S)[ \t]$|[ \t]{3,}$|^[ \t]+$"
+# Zo horen de vier zinnen te lezen, zoals de leerling ze op de pagina ziet.
+CORRECTED_SENTENCES = [
+    "JOIN, LEFT JOIN en INNER JOIN gebruiken",
+    "Het eerste veld van een tabel is de primary key (PK).",
+    "De veldnamen kunnen in meer dan één tabel voorkomen.",
+    "Daarom willen we bij JOIN altijd aanduiden welke tabel we bedoelen.",
+]
+
+
+def prose_of(rel: str) -> str:
+    """De lopende tekst van een pagina: de markdown zonder codeblokken en
+    zonder tabelrijen."""
+    text = re.sub(r"^```.*?^```[ \t]*$", "", source_of(rel), flags=re.MULTILINE | re.DOTALL)
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("|"))
+
+
+def test_chapter_explanations_have_no_language_slips() -> None:
+    """Issues #74 en #76: de uitleg van elk hoofdstuk bevat geen van de zinnen
+    uit issue #74, geen dubbel woordje en geen dubbele spatie in lopende tekst,
+    en geen markdown-cel heeft spaties op het einde van een regel."""
+    problems = []
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            hits = find_phrases(prose_of(rel), LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
+            hits += find_phrases(source_of(rel), [TRAILING_SPACE])
+            problems += [f"{rel}: {hit}" for hit in hits]
+    assert not problems, "\n".join(problems)
+
+
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
     chapters = load_toc()["parts"][EXPECTED_PARTS.index("Big Data")]["chapters"]
     intro = next(c for c in chapters if c["file"] == FIRST_BIG_DATA)
@@ -1235,6 +1515,27 @@ def test_html_editor_page_shows_the_fullscreen_step() -> None:
     text = html.unescape(re.sub(r"<[^>]+>", "", article_html("chapters/SQL/01_Starten_met_sql")))
     for needle in ("Groot scherm", "Klein scherm", "Esc"):
         assert needle in text, f"SQL hoofdstuk 1 (gebouwd): {needle!r} staat niet in de uitleg"
+
+
+def test_html_join_exercises_are_shown_in_the_built_page() -> None:
+    """Issue #73: wat de leerling ziet — de gebouwde pagina van het
+    JOIN-hoofdstuk toont elke opgave van §2 en §3, met haar nummer."""
+    visible = html.unescape(re.sub(r"<[^>]+>", "", article_html(JOIN_CHAPTER)))
+    problems = []
+    for name, _, exercises in JOIN_SECTIONS:
+        for n, (anchor, _) in enumerate(exercises, 1):
+            if not re.search(rf"^--- {n}\. [^\n]*{re.escape(anchor)}", visible, flags=re.MULTILINE):
+                problems.append(f"{name} oefening {n} ({anchor!r}) staat niet op de gebouwde pagina")
+    assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
+
+
+def test_html_join_explanation_shows_the_corrected_sentences() -> None:
+    """Issue #74: wat de leerling leest — de gebouwde pagina van het
+    JOIN-hoofdstuk toont de vier verbeterde zinnen en geen van de slips."""
+    visible = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", article_html(JOIN_CHAPTER))))
+    problems = find_phrases(visible, LANGUAGE_SLIPS)
+    problems += [f"{sentence!r} staat niet op de gebouwde pagina" for sentence in CORRECTED_SENTENCES if sentence not in visible]
+    assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
 
 
 def test_html_competency_page_renders_rubric_and_leerplan() -> None:
