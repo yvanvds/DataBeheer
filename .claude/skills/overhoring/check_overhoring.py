@@ -18,7 +18,9 @@ de rubriek voor Teams (`rubriek.csv`). Dit script controleert de regels van
 - `## Doelen` bovenaan de overhoring heeft één punt per getoetst leerdoel;
 - de map bevat niets anders (geen modeloplossingen: repo en site zijn publiek)
   en de notebook geen `remove-cell`-cellen (die staan niet op de site, maar wel
-  in de publieke repo).
+  in de publieke repo). Wat git negeert volgens `.gitignore`, zoals de map
+  `Submitted files` met ingediend werk uit Teams, telt niet mee: dat komt niet
+  in de repo of op de site (issue #75).
 
 Daarnaast voert het een modelquery uit op gadgetshop.db (alleen lezen), om te
 zien dat ze werkt en een niet-leeg resultaat geeft. De query komt niet in een
@@ -34,6 +36,7 @@ de aanroep.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import importlib.util
 import json
 import re
@@ -49,6 +52,9 @@ RUBRIEK_SCRIPT = ROOT / ".claude" / "skills" / "rubriek" / "check_rubriek.py"
 #: De databank van de overhoringen (#61), zoals de pagina ze laadt en op schijf.
 QUIZ_DB = "/_static/db/gadgetshop.db"
 DB = BOOK / QUIZ_DB.lstrip("/")
+#: Wat git negeert (bv. de map `Submitted files` uit Teams) komt niet in de
+#: repo of op de site en telt dus niet als vreemd bestand in de map (#75).
+GITIGNORE = ROOT / ".gitignore"
 
 MAX_VRAGEN = 10
 MIN_DOELEN_PER_VRAAG = 2
@@ -341,12 +347,54 @@ def controleer_rubriek(pad: Path, r: Resultaat) -> None:
         r.fouten.append(f"rubriek.csv: geen criterium voor {', '.join(ontbreekt)}, dat wel getoetst wordt")
 
 
+def lees_gitignore(pad: Path = GITIGNORE) -> list[str]:
+    """De patronen uit .gitignore, zonder commentaar en lege regels."""
+    if not pad.is_file():
+        return []
+    regels = (regel.rstrip() for regel in pad.read_text(encoding="utf-8").splitlines())
+    return [regel for regel in regels if regel and not regel.startswith("#")]
+
+
+def git_negeert(relatief: str, is_map: bool, patronen: list[str]) -> bool:
+    """Of git het pad (relatief t.o.v. de repo, met /) negeert volgens de patronen
+    van .gitignore. Een vereenvoudiging van de regels van git, genoeg voor dit
+    bestand: een patroon met een / (niet alleen op het einde) geldt vanaf de
+    wortel van de repo, een ander patroon voor een naam op elk niveau; een / op
+    het einde geldt alleen voor mappen; ! draait het om; het laatste passende
+    patroon telt. Hoofdletters tellen zoals op het platform (fnmatch), net als
+    bij git.
+    """
+    genegeerd = False
+    for patroon in patronen:
+        omgekeerd = patroon.startswith("!")
+        patroon = patroon[1:] if omgekeerd else patroon
+        alleen_map = patroon.endswith("/")
+        patroon = patroon.rstrip("/")
+        if alleen_map and not is_map:
+            continue
+        if "/" in patroon:
+            past = fnmatch.fnmatch(relatief, patroon.lstrip("/"))
+        else:
+            past = fnmatch.fnmatch(relatief.rsplit("/", 1)[-1], patroon)
+        if past:
+            genegeerd = not omgekeerd
+    return genegeerd
+
+
 def controleer_inhoud_map(map_: Path, r: Resultaat) -> None:
+    patronen = lees_gitignore()
+    # Op haar plaats zijn de laatste drie delen van de map book/overhoringen/<naam>.
+    relatief = Path(*map_.resolve().parts[-3:]).as_posix()
     for pad in sorted(map_.iterdir()):
         if pad.name.startswith(".") or pad.name == f"{r.pagina}.ipynb" or pad.name in BESTANDEN:
             continue
         if pad.suffix == ".ipynb" and pad.is_file():
             r.opmerkingen.append(f"{pad.name} wordt ook een pagina (controleer ze apart met --pagina {pad.stem})")
+            continue
+        if git_negeert(f"{relatief}/{pad.name}", pad.is_dir(), patronen):
+            r.opmerkingen.append(
+                f"{pad.name} staat in .gitignore en komt niet in de repo of op de site (bv. ingediend werk uit Teams)"
+            )
             continue
         r.fouten.append(
             f"{pad.name} hoort niet in de map: alleen {r.pagina}.ipynb, {' en '.join(BESTANDEN)} "

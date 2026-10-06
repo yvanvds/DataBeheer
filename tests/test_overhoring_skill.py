@@ -14,6 +14,9 @@ script:
   leerdoelen, een leerdoel zonder vraag, een kerndoel weg terwijl een
   aanvullend doel blijft, een rubriek met andere doelen dan de getoetste,
   modeloplossingen of notities in de map, ...;
+- wat git negeert (.gitignore), zoals de map `Submitted files` met ingediend
+  werk uit Teams, telt niet mee: dat komt niet in de repo of op de site
+  (issue #75);
 - een modelquery loopt op gadgetshop.db, alleen lezend, en een leeg resultaat
   telt als fout;
 - de skill zelf: Claude Code vindt hem, en het voorbeeld van de dekkingstabel
@@ -28,6 +31,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -350,6 +354,43 @@ def test_folder_must_be_a_slug_directly_in_book_overhoringen(tmp_path) -> None:
     for bestand in maak_map(tmp_path).iterdir():
         (elders / bestand.name).write_bytes(bestand.read_bytes())
     assert any("niet rechtstreeks in book/overhoringen/" in f for f in fouten(elders))
+
+
+# --- wat git negeert, komt niet in de repo of op de site (issue #75) -----------
+
+
+def test_submitted_work_from_teams_next_to_the_quiz_is_not_an_error(tmp_path) -> None:
+    """Wie in Teams het ingediende werk downloadt, krijgt een map 'Submitted
+    files' naast de overhoring. Git negeert ze (.gitignore), dus ze komt nooit
+    in de repo of op de site: het script slaat ze over en meldt dat. Een
+    bestand dat git wél zou opnemen, blijft een fout."""
+    pad = maak_map(tmp_path)
+    ingediend = pad / "Submitted files" / "Leerling"
+    ingediend.mkdir(parents=True)
+    (ingediend / "sql-h1-h2-antwoorden.md").write_bytes(b"# Overhoring SQL 1 en 2 - antwoorden\n")
+    r = check.controleer_map(pad)
+    assert r.fouten == []
+    assert any("Submitted files" in o and ".gitignore" in o for o in r.opmerkingen), r.opmerkingen
+    (pad / "oplossingen.md").write_bytes(b"SELECT 1;\n")
+    assert fouten(pad) == [
+        "oplossingen.md hoort niet in de map: alleen overhoring.ipynb, leerdoelen.md en rubriek.csv "
+        "(geen modeloplossingen of notities: de repo en de site zijn publiek)"
+    ]
+
+
+def test_git_itself_ignores_submitted_work_like_the_script_does() -> None:
+    """Het script leest .gitignore zelf (zo werkt het ook in tmp_path); deze
+    test vraagt git of het hetzelfde vindt, zodat de regel niet stilletjes uit
+    .gitignore kan verdwijnen terwijl het script de map blijft overslaan."""
+    if shutil.which("git") is None:
+        pytest.skip("git staat niet op het pad")
+    ingediend = "book/overhoringen/sql-h1-h2/Submitted files/Leerling/sql-h1-h2-antwoorden.md"
+    proc = subprocess.run(["git", "check-ignore", "-q", ingediend], capture_output=True, cwd=ROOT, check=False)
+    assert proc.returncode == 0, "git negeert 'Submitted files' niet: zet book/overhoringen/*/Submitted files/ in .gitignore"
+    patronen = check.lees_gitignore()
+    assert check.git_negeert("book/overhoringen/sql-h1-h2/Submitted files", True, patronen)
+    assert not check.git_negeert("book/overhoringen/sql-h1-h2/oplossingen.md", False, patronen)
+    assert not check.git_negeert("book/overhoringen/sql-h1-h2/notities", True, patronen)
 
 
 # --- modelquery's op gadgetshop.db -------------------------------------------
