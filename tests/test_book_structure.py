@@ -10,8 +10,9 @@ canonieke links naar de site van main in /main/ (issue #67),
 BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68),
 JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
 hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
-de uitleg van dat hoofdstuk zonder taalfouten (issue #74)
-en de verankering van de onderzoekscompetenties
+de uitleg van dat hoofdstuk zonder taalfouten (issue #74) en dezelfde
+controle over alle hoofdstukken, met spaties op het einde van een regel erbij
+(issue #76), en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
 
@@ -1180,7 +1181,9 @@ def test_join_model_solutions_use_join_and_return_rows_on_webshop_db() -> None:
 # leerdoelen. De uitleg staat in de markdown-cellen (de oefeningen zijn
 # codecellen); de lopende tekst daarvan mag geen van die zinnen, geen dubbel
 # woordje en geen dubbele spatie bevatten. Tabelrijen en codeblokken lijnen
-# met spaties uit en tellen niet mee.
+# met spaties uit en tellen niet mee. Sinds issue #76 geldt dezelfde controle
+# voor alle hoofdstukken ("GROUP BY  gebruiken" in de leerdoelen van
+# hoofdstuk 4), plus spaties op het einde van een regel.
 LANGUAGE_SLIPS = [
     r"\bis is\b",
     r"\bHet veldnamen\b",
@@ -1193,6 +1196,11 @@ LANGUAGE_SLIPS = [
 DOUBLED_WORD = r"(?-i:\b(is|de|een|we|in|van|op|en|te|met|bij|om)[ \t]+\1\b)"
 # Twee of meer spaties midden in een zin.
 DOUBLE_SPACE = r"\S {2,}\S"
+# Spaties op het einde van een regel in een markdown-cel (issue #76):
+# onzichtbaar op de pagina, maar ze maken elke diff rommelig. Ze tellen overal
+# mee, ook in codeblokken, directives en tabelrijen. Alleen precies twee
+# spaties na tekst niet: dat is in markdown een harde regelovergang.
+TRAILING_SPACE = r"(?m)(?<=\S)[ \t]$|[ \t]{3,}$|^[ \t]+$"
 # Zo horen de vier zinnen te lezen, zoals de leerling ze op de pagina ziet.
 CORRECTED_SENTENCES = [
     "JOIN, LEFT JOIN en INNER JOIN gebruiken",
@@ -1209,11 +1217,18 @@ def prose_of(rel: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("|"))
 
 
-def test_join_chapter_explanation_has_no_language_slips() -> None:
-    """Issue #74: de uitleg van het JOIN-hoofdstuk bevat geen van de zinnen uit
-    het issue, geen dubbel woordje en geen dubbele spatie in lopende tekst."""
-    problems = find_phrases(prose_of(JOIN_CHAPTER), LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
-    assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+def test_chapter_explanations_have_no_language_slips() -> None:
+    """Issues #74 en #76: de uitleg van elk hoofdstuk bevat geen van de zinnen
+    uit issue #74, geen dubbel woordje en geen dubbele spatie in lopende tekst,
+    en geen markdown-cel heeft spaties op het einde van een regel."""
+    problems = []
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            hits = find_phrases(prose_of(rel), LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
+            hits += find_phrases(source_of(rel), [TRAILING_SPACE])
+            problems += [f"{rel}: {hit}" for hit in hits]
+    assert not problems, "\n".join(problems)
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
