@@ -9,7 +9,8 @@ SQL-cellen die als SQL gehighlight worden en niet als Python (issues #18 en #66)
 canonieke links naar de site van main in /main/ (issue #67),
 BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68),
 JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
-hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73)
+hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
+de uitleg van dat hoofdstuk zonder taalfouten (issue #74)
 en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
@@ -1174,6 +1175,46 @@ def test_join_model_solutions_use_join_and_return_rows_on_webshop_db() -> None:
     assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
 
 
+# Taalfouten in de uitleg van het JOIN-hoofdstuk (issue #74): "is is", "Het
+# veldnamen", "Daarom willen bij `JOIN`" en een dubbele spatie in de
+# leerdoelen. De uitleg staat in de markdown-cellen (de oefeningen zijn
+# codecellen); de lopende tekst daarvan mag geen van die zinnen, geen dubbel
+# woordje en geen dubbele spatie bevatten. Tabelrijen en codeblokken lijnen
+# met spaties uit en tellen niet mee.
+LANGUAGE_SLIPS = [
+    r"\bis is\b",
+    r"\bHet veldnamen\b",
+    r"\bDaarom willen bij\b",
+    r"JOIN  gebruiken",
+]
+# Een woordje dat nooit tweemaal na elkaar hoort op één regel ("is is", "de de").
+# Niet "je je" (wederkerend: "kan je je afvragen") of "het het" ("vind het het
+# beste"), en hoofdlettergevoelig, want "van Van Gogh" is goed Nederlands.
+DOUBLED_WORD = r"(?-i:\b(is|de|een|we|in|van|op|en|te|met|bij|om)[ \t]+\1\b)"
+# Twee of meer spaties midden in een zin.
+DOUBLE_SPACE = r"\S {2,}\S"
+# Zo horen de vier zinnen te lezen, zoals de leerling ze op de pagina ziet.
+CORRECTED_SENTENCES = [
+    "JOIN, LEFT JOIN en INNER JOIN gebruiken",
+    "Het eerste veld van een tabel is de primary key (PK).",
+    "De veldnamen kunnen in meer dan één tabel voorkomen.",
+    "Daarom willen we bij JOIN altijd aanduiden welke tabel we bedoelen.",
+]
+
+
+def prose_of(rel: str) -> str:
+    """De lopende tekst van een pagina: de markdown zonder codeblokken en
+    zonder tabelrijen."""
+    text = re.sub(r"^```.*?^```[ \t]*$", "", source_of(rel), flags=re.MULTILINE | re.DOTALL)
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("|"))
+
+
+def test_join_chapter_explanation_has_no_language_slips() -> None:
+    """Issue #74: de uitleg van het JOIN-hoofdstuk bevat geen van de zinnen uit
+    het issue, geen dubbel woordje en geen dubbele spatie in lopende tekst."""
+    problems = find_phrases(prose_of(JOIN_CHAPTER), LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
+    assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
     chapters = load_toc()["parts"][EXPECTED_PARTS.index("Big Data")]["chapters"]
@@ -1470,6 +1511,15 @@ def test_html_join_exercises_are_shown_in_the_built_page() -> None:
         for n, (anchor, _) in enumerate(exercises, 1):
             if not re.search(rf"^--- {n}\. [^\n]*{re.escape(anchor)}", visible, flags=re.MULTILINE):
                 problems.append(f"{name} oefening {n} ({anchor!r}) staat niet op de gebouwde pagina")
+    assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
+
+
+def test_html_join_explanation_shows_the_corrected_sentences() -> None:
+    """Issue #74: wat de leerling leest — de gebouwde pagina van het
+    JOIN-hoofdstuk toont de vier verbeterde zinnen en geen van de slips."""
+    visible = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", article_html(JOIN_CHAPTER))))
+    problems = find_phrases(visible, LANGUAGE_SLIPS)
+    problems += [f"{sentence!r} staat niet op de gebouwde pagina" for sentence in CORRECTED_SENTENCES if sentence not in visible]
     assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
 
 
