@@ -30,6 +30,11 @@
 //     in sql-queries-file.js) en "Download mijn databank" (#41) biedt de
 //     databank aan als .db-bestand (SQLite-bestand, te openen in elk
 //     SQLite-programma en in te dienen via Teams);
+//   - een cel met tag `sql-answer` (#79) wordt een tekstvak voor een open
+//     vraag, met de celinhoud (de vraag) als label. Het antwoord wordt net als
+//     een query per browser bewaard en gaat mee in "Download mijn queries" en
+//     "Upload mijn queries"; de balk "Mijn werk" komt onder het laatste
+//     tekstvak als dat na de laatste editor staat;
 //   - Run voert de selectie uit, of anders het statement onder de cursor
 //     (subtiel gemarkeerd); "Run alles" (Mod-Shift-Enter) voert de hele cel
 //     uit (#34, statementgrenzen in sql-statements.js);
@@ -60,6 +65,7 @@ const OUTPUT_PLACEHOLDER = 'De resultaten verschijnen hier.';
 const clients = new Map();    // clientId -> output-<div>
 const cells = [];             // interne administratie per editorcel
 const editorsApi = [];        // publieke API per cel (window.sqlLive.editors)
+const answersApi = [];        // publieke API per antwoordvak (window.sqlLive.answers, #79)
 const watchdogs = new Map();  // clientId -> { timer, outputEl }
 let worker = null;
 let seedBuf = null;           // ArrayBuffer van de seed-database (voor reset/reseed)
@@ -171,6 +177,68 @@ function findSqlBlocks() {
     blocks.push({ cell, initialSql: (pre.textContent || '').trim() });
   });
   return blocks;
+}
+
+// --- Antwoordvakken: cellen met tag `sql-answer` (#79) ---
+// Een open vraag bij een SQL-les (bv. de slotvragen van de Detective-les in
+// SQL hoofdstuk 3). De celinhoud is de vraag: ze staat als label boven het
+// tekstvak en als kop bij het antwoord in "Download mijn queries" (formaat in
+// sql-queries-file.js). Bewust een gewone <textarea> en geen CodeMirror: licht
+// op trage laptops, en autocomplete of automatisch sluitende haakjes en
+// aanhalingstekens horen niet bij Nederlandse tekst. Het antwoord wordt bij
+// elke wijziging bewaard zoals de queries (#14), met een eigen sleutel per
+// vak: `sql-answer:{pad}:{index}`, met de index uit de volgorde op de pagina.
+// Een leeg vak heeft niets te bewaren (sleutel weg).
+const ANSWER_PLACEHOLDER = 'Schrijf hier je antwoord.';
+
+function answerKey(index) {
+  return `sql-answer:${location.pathname}:${index}`;
+}
+
+function findAnswerCells() {
+  return [...document.querySelectorAll('.cell.tag_sql-answer, .cell.tag-sql-answer')];
+}
+
+function initAnswers(answerCells) {
+  answerCells.forEach((cell, index) => {
+    const pre = cell.querySelector('.cell_input pre, pre');
+    const question = (pre?.textContent || '').trim();
+    cell.querySelector('.cell_input')?.remove();
+
+    const id = `sql-answer-${index + 1}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'sql-answer';
+    const label = document.createElement('label');
+    label.className = 'sql-answer-label';
+    label.htmlFor = id;
+    const number = document.createElement('span');
+    number.className = 'title';
+    number.textContent = `Vraag ${index + 1}`;
+    const text = document.createElement('span');
+    text.className = 'sql-answer-question';
+    text.textContent = question;
+    label.append(number, text);
+    const input = document.createElement('textarea');
+    input.className = 'sql-answer-input';
+    input.id = id;
+    input.rows = 4;
+    input.placeholder = ANSWER_PLACEHOLDER;
+
+    const key = answerKey(index);
+    input.value = readSaved(key) ?? '';
+    const save = () => writeSaved(key, input.value, '');
+    input.addEventListener('input', save);
+    wrap.append(label, input);
+    cell.appendChild(wrap);
+
+    answersApi.push({
+      key,
+      index,
+      question,
+      getValue: () => input.value,
+      setValue: (value) => { input.value = String(value); save(); },
+    });
+  });
 }
 
 function wrapCell(cell) {
@@ -587,7 +655,8 @@ async function openSchema() {
 // Handig indienformaat, en de aangeraden uitweg voor wie op meerdere
 // toestellen werkt: de opslag uit #14 is per browser/toestel. De export leest
 // rechtstreeks uit de editors (niet uit localStorage), dus hij werkt ook als
-// opslag geblokkeerd is.
+// opslag geblokkeerd is. Heeft de pagina antwoordvakken (#79), dan komen de
+// antwoorden na de cellen in hetzelfde bestand, elk met de vraag in de kop.
 function exportFileName() {
   const page = pageName(location.pathname).replace(/[^\w.-]+/g, '_');
   return `queries-${page || 'pagina'}.sql`;
@@ -597,6 +666,7 @@ function buildSqlExport() {
   return buildQueriesFile(
     location.pathname,
     editorsApi.map(ed => ({ index: ed.index, sql: ed.getValue() })),
+    answersApi.map(a => ({ index: a.index, question: a.question, text: a.getValue() })),
   );
 }
 
@@ -660,12 +730,18 @@ async function downloadDatabase(report) {
 // live in de editors. Cellen met eigen werk (≠ startcode) worden pas
 // overschreven na bevestiging, net als een bestand van een andere pagina.
 // Komt het bestand van een oudere versie van de pagina (ander celaantal), dan
-// wordt teruggezet wat matcht en gemeld wat niet kon.
-function listCells(indexes) {
+// wordt teruggezet wat matcht en gemeld wat niet kon. De antwoorden (#79)
+// gaan op dezelfde manier: een ingevuld antwoordvak wordt pas na bevestiging
+// overschreven.
+function listNumbered(indexes, one, many) {
   const nums = indexes.map(i => i + 1);
-  if (nums.length === 1) return `cel ${nums[0]}`;
-  return `cellen ${nums.slice(0, -1).join(', ')} en ${nums[nums.length - 1]}`;
+  if (nums.length === 1) return `${one} ${nums[0]}`;
+  return `${many} ${nums.slice(0, -1).join(', ')} en ${nums[nums.length - 1]}`;
 }
+
+const listCells = indexes => listNumbered(indexes, 'cel', 'cellen');
+const listAnswers = indexes => listNumbered(indexes, 'antwoord', 'antwoorden');
+const capitalize = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 
 function planImport(parsed) {
   const restore = [];   // { editor, sql } — cellen die op deze pagina bestaan
@@ -678,13 +754,21 @@ function planImport(parsed) {
     if (current !== sql && current !== editor.initialValue) overwrite.push(index);
     restore.push({ editor, sql });
   }
-  return { restore, missing, overwrite };
+  const answers = { restore: [], missing: [], overwrite: [] }; // idem voor de antwoordvakken
+  for (const { index, text } of parsed.answers) {
+    const answer = answersApi[index];
+    if (!answer) { answers.missing.push(index); continue; }
+    const current = answer.getValue().trim();
+    if (current && current !== text) answers.overwrite.push(index);
+    answers.restore.push({ answer, text });
+  }
+  return { restore, missing, overwrite, answers };
 }
 
 function importQueries(text, report) {
   const parsed = parseQueriesFile(text);
-  const { restore, missing, overwrite } = planImport(parsed);
-  if (!restore.length && !missing.length) {
+  const { restore, missing, overwrite, answers } = planImport(parsed);
+  if (!restore.length && !missing.length && !answers.restore.length && !answers.missing.length) {
     report('Geen cellen gevonden in dit bestand. Kies een bestand dat je met "Download mijn queries" bewaarde.');
     return;
   }
@@ -694,10 +778,16 @@ function importQueries(text, report) {
     warnings.push(`Dit bestand komt van een andere pagina (${pageName(parsed.page)}).`);
   }
   if (overwrite.length) {
-    const which = listCells(overwrite);
     warnings.push(
-      `${which[0].toUpperCase()}${which.slice(1)} van deze pagina ` +
+      `${capitalize(listCells(overwrite))} van deze pagina ` +
       `${overwrite.length === 1 ? 'bevat' : 'bevatten'} eigen werk dat door het bestand overschreven wordt.`,
+    );
+  }
+  if (answers.overwrite.length) {
+    const one = answers.overwrite.length === 1;
+    warnings.push(
+      `${capitalize(listAnswers(answers.overwrite))} van deze pagina ${one ? 'is' : 'zijn'} al ingevuld ` +
+      `en ${one ? 'wordt' : 'worden'} door het bestand overschreven.`,
     );
   }
   if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nToch terugzetten?`)) {
@@ -709,9 +799,13 @@ function importQueries(text, report) {
     if (editor.getValue() !== sql) editor.setValue(sql);
     cells[editor.index].flush?.(); // meteen bewaren (#14), niet pas na de debounce
   });
+  answers.restore.forEach(({ answer, text }) => answer.setValue(text)); // bewaart meteen
 
   const notes = [];
-  if (restore.length) notes.push(`Teruggezet: ${listCells(restore.map(r => r.editor.index))}.`);
+  const restored = [];
+  if (restore.length) restored.push(listCells(restore.map(r => r.editor.index)));
+  if (answers.restore.length) restored.push(listAnswers(answers.restore.map(r => r.answer.index)));
+  if (restored.length) notes.push(`Teruggezet: ${restored.join('; ')}.`);
   if (missing.length) {
     const count = editorsApi.length;
     notes.push(
@@ -719,18 +813,29 @@ function importQueries(text, report) {
       'het bestand komt wellicht van een oudere versie van de pagina.',
     );
   }
+  if (answers.missing.length) {
+    const count = answersApi.length;
+    const fields = count === 0 ? 'geen antwoordvakken' : `${count} ${count === 1 ? 'antwoordvak' : 'antwoordvakken'}`;
+    notes.push(`Niet teruggezet: ${listAnswers(answers.missing)} — deze pagina heeft ${fields}.`);
+  }
   report(notes.join(' '));
 }
 
 function addMyWorkBar(lastCell) {
+  // Met antwoordvakken (#79) zegt de balk dat de antwoorden mee bewaard,
+  // gedownload en teruggezet worden; op alle andere pagina's blijft ze gelijk.
+  const withAnswers = answersApi.length > 0;
+  const kept = withAnswers ? 'Je queries, je antwoorden en je databank worden' : 'Je queries en je databank worden';
+  const restored = withAnswers ? 'je queries en je antwoorden' : 'je queries';
+  const content = withAnswers ? 'alle cellen en je antwoorden' : 'alle cellen';
   const bar = document.createElement('div');
   bar.className = 'sql-download-bar';
   bar.innerHTML = `
     <span class="title">Mijn werk</span>
-    <span class="sql-live-note">Je queries en je databank worden per browser bewaard. Download ze als bestand om ze in te dienen of mee te nemen naar een ander toestel; met Upload zet je je queries hier weer terug.</span>
+    <span class="sql-live-note">${kept} per browser bewaard. Download ze als bestand om ze in te dienen of mee te nemen naar een ander toestel; met Upload zet je ${restored} hier weer terug.</span>
     <span class="actions">
-      <button class="sql-live-btn download" title="Bewaart de inhoud van alle cellen op deze pagina als één .sql-bestand">Download mijn queries</button>
-      <button class="sql-live-btn upload" title="Zet de cellen van deze pagina terug uit een bestand van &quot;Download mijn queries&quot;">Upload mijn queries</button>
+      <button class="sql-live-btn download" title="Bewaart de inhoud van ${content} op deze pagina als één .sql-bestand">Download mijn queries</button>
+      <button class="sql-live-btn upload" title="Zet ${withAnswers ? 'de cellen en de antwoorden' : 'de cellen'} van deze pagina terug uit een bestand van &quot;Download mijn queries&quot;">Upload mijn queries</button>
       <button class="sql-live-btn download-db" title="Bewaart de databank van deze pagina, met al je wijzigingen, als .db-bestand (SQLite)">Download mijn databank</button>
       <input class="sql-upload-input" type="file" accept=".sql,.txt,text/plain,application/sql" hidden>
     </span>
@@ -866,8 +971,12 @@ function initEditors(blocks) {
     });
   });
 
-  // Balk "Mijn werk" (download #30, upload #35) onder de laatste interactieve cel.
-  addMyWorkBar(blocks[blocks.length - 1].cell);
+  // Balk "Mijn werk" (download #30, upload #35) onder de laatste interactieve
+  // cel: een editor, of een antwoordvak (#79) als dat er nog na komt.
+  const interactive = document.querySelectorAll(
+    '.cell.tag_sql-live, .cell.tag-sql-live, .cell.tag_sql-answer, .cell.tag-sql-answer',
+  );
+  addMyWorkBar(interactive[interactive.length - 1] || blocks[blocks.length - 1].cell);
 
   // Nog niet weggeschreven wijzigingen (debounce) alsnog bewaren bij het
   // verlaten of verbergen van de pagina.
@@ -883,6 +992,9 @@ onReady(async () => {
   if (!blocks.length) return; // geen interactieve cellen op deze pagina
 
   try {
+    // Antwoordvakken (#79) meteen, niet pas als de databank geladen is: ze
+    // hebben die niet nodig.
+    initAnswers(findAnswerCells());
     const seedUrl = resolveStatic(seedUrlRaw); // bv. "/_static/db/webshop.db"
     const fetchSeed = async () => {
       const res = await fetch(seedUrl);
@@ -900,6 +1012,7 @@ onReady(async () => {
     initEditors(blocks);
     window.sqlLive = {
       editors: editorsApi,
+      answers: answersApi, // antwoordvakken (#79): { key, index, question, getValue, setValue }
       staticBase: STATIC_BASE,
       get dbReady() { return dbReady; }, // o.a. voor de e2e-tests (tests/test_sql_editor.py)
       get dbSaved() { return dbSaved; }, // kopie van de databank staat in IndexedDB (#41)
