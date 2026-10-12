@@ -137,6 +137,53 @@ html[data-theme="dark"] {
   color: var(--sql-text);
 }
 
+/* Antwoordvak (#79): een cel met tag `sql-answer` wordt een tekstvak voor een
+   open vraag. Zelfde paneel als de editorcel (hairline, geen schaduw), met
+   het vraagnummer als mono-eyebrow en de vraag zelf als label. Het tekstvak
+   gebruikt de lettertekst van het boek, niet de mono van de editor: hier
+   schrijft de leerling Nederlands, geen SQL. */
+.sql-answer {
+  margin: 1rem 0;
+  padding: .75rem;
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius-lg);
+  background: var(--sql-surface-raised);
+}
+.sql-answer-label {
+  display: block;
+  margin: 0 0 .5rem;
+  color: var(--sql-text);
+}
+.sql-answer-label .title {
+  display: block;
+  margin-bottom: .25rem;
+  font-family: var(--sql-font-mono);
+  font-size: var(--sql-label-size);
+  text-transform: uppercase;
+  letter-spacing: var(--sql-label-tracking);
+  color: var(--sql-text-muted);
+}
+.sql-answer-question { font-weight: 600; }
+.sql-answer-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  padding: .5rem .75rem;
+  border: 1px solid var(--sql-border-strong);
+  border-radius: var(--sql-radius);
+  background: var(--sql-surface);
+  color: var(--sql-text);
+  font: inherit;
+  line-height: 1.5;
+}
+.sql-answer-input::placeholder { color: var(--sql-text-caption); }
+.sql-answer-input:focus-visible {
+  outline: 2px solid var(--sql-focus-ring);
+  outline-offset: 2px;
+}
+
 /* ── schermvullende modus per cel (#48) ──────────────────────
    Kleine leerlingenschermen: één cel vult de viewport, zodat er ruimte is
    voor een langere query en een brede resultaattabel. Bewust een

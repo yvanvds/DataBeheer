@@ -12,7 +12,9 @@ JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
 hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
 de uitleg van dat hoofdstuk zonder taalfouten (issue #74) en dezelfde
 controle over alle hoofdstukken, met spaties op het einde van een regel erbij
-(issue #76), en de verankering van de onderzoekscompetenties
+(issue #76), de Detective-les van SQL hoofdstuk 3 zonder de tabel controle
+vooraf, met hints zonder queries en met een antwoordvak per slotvraag
+(issue #79), en de verankering van de onderzoekscompetenties
 in het Big Data-deel (issue #37) en de les kritisch werken met AI die daarnaast
 staat (issue #38).
 
@@ -1220,15 +1222,162 @@ def prose_of(rel: str) -> str:
 def test_chapter_explanations_have_no_language_slips() -> None:
     """Issues #74 en #76: de uitleg van elk hoofdstuk bevat geen van de zinnen
     uit issue #74, geen dubbel woordje en geen dubbele spatie in lopende tekst,
-    en geen markdown-cel heeft spaties op het einde van een regel."""
+    en geen markdown-cel heeft spaties op het einde van een regel. Sinds issue
+    #79 tellen de vragen in de antwoordvakken (codecellen met tag sql-answer)
+    mee als lopende tekst."""
     problems = []
     for part in ("SQL", "BIG_DATA", "ERD"):
         for notebook in chapter_notebooks(part):
             rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
-            hits = find_phrases(prose_of(rel), LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
+            prose = "\n".join([prose_of(rel), *code_cells_tagged(rel, ANSWER_TAG)])
+            hits = find_phrases(prose, LANGUAGE_SLIPS + [DOUBLED_WORD, DOUBLE_SPACE])
             hits += find_phrases(source_of(rel), [TRAILING_SPACE])
             problems += [f"{rel}: {hit}" for hit in hits]
     assert not problems, "\n".join(problems)
+
+
+# De Detective-les van SQL hoofdstuk 3 (issue #79). De tabel `controle`, waarin
+# de leerling op het einde de dader aanwijst, stond al in het overzicht van de
+# database en in de spelregels ("een echte detective kijkt niet stiekem in de
+# tabel controle"): zo bracht de les de leerlingen net op het idee. Ze komt nu
+# pas ter sprake bij "De ontknoping". De hints gaven de hele query, met enkel
+# nog `...` in te vullen; nu zeggen ze welke tabellen, welke kolommen en
+# waarop te letten, zonder query. En de drie slotvragen van "Zaak gesloten?"
+# stonden onder de balk "Mijn werk", zonder plaats voor een antwoord: nu heeft
+# elke vraag een antwoordvak (een codecel met tag sql-answer, die
+# book/_static/sql-editors.js tot een tekstvak maakt). De balk "Mijn werk"
+# komt onder de laatste interactieve cel, dus na de vakken, en de antwoorden
+# gaan mee in "Download mijn queries".
+DETECTIVE = "chapters/SQL/03c_Detective"
+DETECTIVE_SEED = BOOK / "_static" / "db" / "steenberg.db"
+DETECTIVE_UNRAVELLING = "## De ontknoping"
+DETECTIVE_CLOSING = "## Zaak gesloten?"
+DETECTIVE_STEPS = 7
+ANSWER_TAG = "sql-answer"
+# Zo noemt de les de tabel: in code, vet in het overzicht, of "de tabel controle"
+# in een opgave. "De maandelijkse controle van de facturatie" in het dossier is
+# gewoon een woord, geen tabel.
+CONTROLE_TABLE = [r"`controle`", r"\*\*controle\*\*", r"\btabel controle\b", r"\bFROM controle\b"]
+DETECTIVE_HINT = re.compile(
+    r"^:::\{admonition\} Hint bij stap (\d+)\n:class: tip dropdown\n(.*?)^:::$", flags=re.MULTILINE | re.DOTALL
+)
+# Wat een hint niet meer bevat: een codeblok, de opbouw van een query of een
+# in te vullen `...`. JOIN en LIKE mogen wel: die zeggen welke techniek nodig is.
+QUERY_IN_HINT = [r"```", r"\bSELECT\b", r"\bFROM\b", r"\bWHERE\b", r"\bORDER BY\b", r"\.\.\.", r"…"]
+# Een stuk van elke slotvraag, in volgorde.
+DETECTIVE_QUESTIONS = [
+    "Welke query leverde het doorslaggevende bewijs?",
+    "Hoe raakte hij aan dat wachtwoord",
+    "in welke tabellen had hij dan moeten knoeien?",
+]
+
+
+def notebook_cells(rel: str) -> list[dict]:
+    return json.loads((BOOK / f"{rel}.ipynb").read_text(encoding="utf-8"))["cells"]
+
+
+def cell_tags(cell: dict) -> list[str]:
+    return cell.get("metadata", {}).get("tags", [])
+
+
+def test_detective_mentions_table_controle_only_at_the_unravelling() -> None:
+    """Issue #79: vóór "De ontknoping" noemt geen enkele cel de tabel
+    `controle` — niet het overzicht van de database, niet de spelregels en
+    geen opgave in een editorcel. In de ontknoping wijst de leerling er de
+    dader in aan, en de tabel zelf blijft in steenberg.db."""
+    cells = notebook_cells(DETECTIVE)
+    start = next(
+        (i for i, c in enumerate(cells) if c["cell_type"] == "markdown" and DETECTIVE_UNRAVELLING in "".join(c["source"])),
+        None,
+    )
+    assert start is not None, f"{DETECTIVE}: geen kop {DETECTIVE_UNRAVELLING!r}"
+    before = "\n".join("".join(c["source"]) for c in cells[:start])
+    before += "\n" + "".join(cells[start]["source"]).split(DETECTIVE_UNRAVELLING)[0]
+    hits = find_phrases(before, CONTROLE_TABLE)
+    assert not hits, f"{DETECTIVE}: de tabel controle staat al vóór de ontknoping:\n" + "\n".join(hits)
+    after = "".join(cells[start]["source"]).split(DETECTIVE_UNRAVELLING)[1]
+    assert re.search(r"\bFROM controle\b", after), f"{DETECTIVE}: de ontknoping vraagt niet meer in de tabel controle"
+    con = sqlite3.connect(DETECTIVE_SEED)
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        con.close()
+    assert "controle" in tables, f"{DETECTIVE_SEED.relative_to(ROOT)}: de tabel controle is weg"
+
+
+def test_detective_hints_name_tables_and_columns_but_give_no_query() -> None:
+    """Issue #79: onder elke stap staat één hint, zonder SQL-blok, zonder de
+    opbouw van de query in de tekst en zonder `...` om in te vullen. Zonder
+    query moet de tekst het werk doen: elke hint noemt minstens twee tabellen
+    of kolommen."""
+    hints = DETECTIVE_HINT.findall(source_of(DETECTIVE))
+    numbers = [int(n) for n, _ in hints]
+    assert numbers == list(range(1, DETECTIVE_STEPS + 1)), f"{DETECTIVE}: hints bij stap {numbers}"
+    problems = []
+    for n, body in hints:
+        problems += [f"hint bij stap {n}: {hit}" for hit in find_phrases(body, QUERY_IN_HINT)]
+        names = set(re.findall(r"`(\w+)`", body))
+        if len(names) < 2:
+            problems.append(f"hint bij stap {n} noemt maar {sorted(names)} als tabel of kolom: {body.strip()!r}")
+    assert not problems, f"{DETECTIVE}:\n" + "\n".join(problems)
+
+
+def test_detective_closing_questions_each_have_an_answer_field_above_the_work_bar() -> None:
+    """Issue #79: de drie slotvragen staan elk in een eigen antwoordvak, in
+    volgorde, na de laatste editorcel (de ontknoping) en ingeleid door de kop
+    "Zaak gesloten?". De vakken zijn de laatste cellen van de les: de balk
+    "Mijn werk" komt onder de laatste interactieve cel, dus wat na de vakken
+    stond, kwam onder de balk. Los in de tekst, zonder vak, staan de vragen
+    niet meer."""
+    cells = notebook_cells(DETECTIVE)
+    answers = [i for i, c in enumerate(cells) if ANSWER_TAG in cell_tags(c)]
+    live = [i for i, c in enumerate(cells) if "sql-live" in cell_tags(c)]
+    count = len(DETECTIVE_QUESTIONS)
+    assert len(answers) == count, f"{DETECTIVE}: {len(answers)} antwoordvakken, verwacht {count}"
+    problems = []
+    if answers != list(range(len(cells) - count, len(cells))):
+        problems.append(f"de antwoordvakken zijn niet de laatste cellen: cellen {answers} van {len(cells)}")
+    if live[-1] > answers[0]:
+        problems.append("er staat een editorcel na het eerste antwoordvak")
+    for i, question in zip(answers, DETECTIVE_QUESTIONS):
+        text = "".join(cells[i]["source"])
+        if cells[i]["cell_type"] != "code":
+            problems.append(f"antwoordvak {text!r} is geen codecel")
+        if question not in text:
+            problems.append(f"antwoordvak {text!r} stelt de vraag {question!r} niet")
+    intro = "".join(cells[answers[0] - 1]["source"])
+    if not intro.startswith(DETECTIVE_CLOSING):
+        problems.append(f"de cel voor de vakken begint niet met {DETECTIVE_CLOSING!r}: {intro[:60]!r}")
+    if "**Download mijn queries**" not in intro:
+        problems.append("de inleiding zegt niet dat de antwoorden mee in Download mijn queries gaan")
+    markdown = markdown_of(BOOK / f"{DETECTIVE}.ipynb")
+    problems += [f"de vraag {q!r} staat nog in de tekst" for q in DETECTIVE_QUESTIONS if q in markdown]
+    assert not problems, f"{DETECTIVE}:\n" + "\n".join(problems)
+
+
+def test_answer_fields_hold_text_that_lexes_as_sql() -> None:
+    """Issue #79: een antwoordvak is een codecel, en myst-nb highlight elke
+    codecel van een SQL-notebook als SQL (issue #66). De vraag erin is
+    Nederlandse tekst: een `—` of een apostrof ("duo's", "'s avonds") is voor
+    de SQL-lexer van Pygments een fout, en dan geeft de build een warning
+    ("Lexing literal_block … as "sql" resulted in an error"). Op de pagina
+    vervangt de editor dat codeblok door het tekstvak; de build moet zonder
+    warnings blijven."""
+    from pygments.lexers import SqlLexer
+    from pygments.token import Error
+
+    problems = []
+    found = 0
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            for n, text in enumerate(code_cells_tagged(rel, ANSWER_TAG), 1):
+                found += 1
+                errors = [value for token, value in SqlLexer().get_tokens(text) if token in Error]
+                if errors:
+                    problems.append(f"{rel}: antwoordvak {n}: {errors!r} in {text!r}")
+    assert not problems, "tekens die de SQL-lexer niet kent (vermijd — en '):\n" + "\n".join(problems)
+    assert found >= len(DETECTIVE_QUESTIONS), f"maar {found} antwoordvakken gevonden, er is niets nagekeken"
 
 
 def test_competency_page_is_a_section_of_big_data_intro() -> None:
@@ -1536,6 +1685,38 @@ def test_html_join_explanation_shows_the_corrected_sentences() -> None:
     problems = find_phrases(visible, LANGUAGE_SLIPS)
     problems += [f"{sentence!r} staat niet op de gebouwde pagina" for sentence in CORRECTED_SENTENCES if sentence not in visible]
     assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
+
+
+def test_html_detective_hides_controle_shows_hints_without_queries_and_answer_cells_last() -> None:
+    """Issue #79: wat de leerling op de gebouwde pagina ziet — vóór de
+    ontknoping geen tabel controle, zeven hints zonder codeblok, en de drie
+    slotvragen elk in een antwoordcel (die de editor tot een tekstvak maakt)
+    als laatste cellen van de pagina, onder de kop "Zaak gesloten?"."""
+    article = article_html(DETECTIVE)
+    visible = html.unescape(re.sub(r"<[^>]+>", "", article))
+    problems = []
+    before = visible.split("De ontknoping")[0]
+    problems += [f"vóór de ontknoping: {hit}" for hit in find_phrases(before, [r"\bcontrole\(", r"\btabel controle\b"])]
+    hints = re.findall(
+        r'<div class="tip dropdown admonition">\s*<p class="admonition-title">Hint bij stap \d+</p>(.*?)</div>',
+        article,
+        flags=re.DOTALL,
+    )
+    if len(hints) != DETECTIVE_STEPS:
+        problems.append(f"{len(hints)} hints als dropdown gerenderd, verwacht {DETECTIVE_STEPS}")
+    problems += [f"hint bij stap {n} toont een codeblok" for n, body in enumerate(hints, 1) if "<pre" in body]
+    starts = [m.start() for m in re.finditer(r'<div class="cell ', article)]
+    answers = [m.start() for m in re.finditer(r'<div class="cell tag_sql-answer[ "]', article)]
+    if len(answers) != len(DETECTIVE_QUESTIONS) or starts[-len(answers):] != answers:
+        problems.append(f"{len(answers)} antwoordcellen, niet de laatste {len(DETECTIVE_QUESTIONS)} cellen van de pagina")
+    closing = article.find('<section id="zaak-gesloten">')
+    if closing < 0 or (answers and answers[0] < closing):
+        problems.append("de antwoordcellen staan niet onder de kop 'Zaak gesloten?'")
+    for start, end, question in zip(answers, answers[1:] + [len(article)], DETECTIVE_QUESTIONS):
+        cell_text = html.unescape(re.sub(r"<[^>]+>", "", article[start:end]))
+        if question not in cell_text:
+            problems.append(f"de antwoordcel stelt de vraag {question!r} niet")
+    assert not problems, f"{DETECTIVE} (gebouwd):\n" + "\n".join(problems)
 
 
 def test_html_competency_page_renders_rubric_and_leerplan() -> None:

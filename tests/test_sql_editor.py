@@ -13,7 +13,9 @@ herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
 tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
 laat "Groot scherm" één cel de hele viewport vullen (issue #48). De
 autocomplete vult namen met hoofdletters (AdventureWorks) gewoon aan, zonder
-backticks eromheen (issue #53).
+backticks eromheen (issue #53). De slotvragen van de Detective-les (SQL
+hoofdstuk 3) hebben elk een antwoordvak boven de balk "Mijn werk"; de
+antwoorden blijven bewaard en gaan mee in de download en de upload (issue #79).
 
 Twee lagen:
 
@@ -305,6 +307,7 @@ def test_upload_restores_downloaded_queries_after_storage_is_cleared(page, tmp_p
     text = path.read_text(encoding="utf-8")
     assert text.startswith(f"-- Mijn queries — {PAGE_PATH}\n"), text[:80]
     assert "\n-- cel 1\n" in text and "\n-- cel 3\n" in text
+    assert "-- antwoord" not in text  # geen antwoordvakken op deze pagina: het formaat van vóór #79
 
     # Opslag kwijt: Startcode wist de bewaarde versie van de cellen, en de rest
     # van de opslag gaat weg; na een herlaad staat overal weer de startcode.
@@ -1323,3 +1326,182 @@ def test_autocomplete_completes_adventureworks_names_without_backticks(page, sit
         expect(run_cell(fresh, 0, "SELECT Product.Name FROM Product;")).to_contain_text("Name")
     finally:
         context.close()
+
+
+# --- e2e: antwoordvakken in de Detective-les (#79) ---------------------------
+
+# De drie slotvragen van "Zaak gesloten?" stonden onder de balk "Mijn werk",
+# zonder plaats om te antwoorden, en kwamen niet mee in "Download mijn
+# queries". Nu is elke vraag een cel met tag sql-answer, die sql-editors.js
+# tot een tekstvak maakt: boven de balk, per browser bewaard zoals een query
+# (#14), en mee in het bestand van de download en de upload.
+DETECTIVE_PAGE = "chapters/SQL/03c_Detective.html"
+DETECTIVE_PATH = "/" + DETECTIVE_PAGE
+ANSWER = ".sql-answer"
+DETECTIVE_QUESTIONS = [
+    "Welke query leverde het doorslaggevende bewijs?",
+    "De fraudeur gebruikte het account van iemand anders. Hoe raakte hij aan dat wachtwoord, "
+    "en welke afspraak binnen het bedrijf had dit kunnen voorkomen?",
+    "Stel dat de fraudeur zijn sporen had willen wissen: in welke tabellen had hij dan moeten knoeien?",
+]
+
+
+def answer_field(page, index: int):
+    return page.locator(ANSWER).nth(index).locator("textarea")
+
+
+def answer_values(page) -> list[str]:
+    return [answer_field(page, i).input_value() for i in range(page.locator(ANSWER).count())]
+
+
+def type_answer(page, index: int, text: str) -> None:
+    """Zoals een leerling: in het vak klikken en typen, met Enter voor een nieuwe regel."""
+    answer_field(page, index).click()
+    for n, line in enumerate(text.split("\n")):
+        if n:
+            page.keyboard.press("Enter")
+        page.keyboard.type(line)
+
+
+def download_queries(page, tmp_path: Path) -> Path:
+    with page.expect_download() as download:
+        page.locator(WORK_BAR).locator("button.download").click()
+    path = tmp_path / download.value.suggested_filename
+    download.value.save_as(path)
+    return path
+
+
+def test_detective_closing_questions_are_answer_fields_above_the_work_bar(page, site_url) -> None:
+    """Elke slotvraag heeft een eigen tekstvak, met de vraag als label (klikken
+    op de vraag zet de cursor in het vak). Op het scherm staan na elkaar: de
+    laatste editorcel (de ontknoping), de kop "Zaak gesloten?", de drie vakken
+    en pas dan de balk "Mijn werk" — en onder de balk staan de vragen niet meer."""
+    context, fresh = open_fresh(page, site_url, DETECTIVE_PAGE)
+    try:
+        fields = fresh.locator(ANSWER)
+        expect(fields).to_have_count(len(DETECTIVE_QUESTIONS))
+        for i, question in enumerate(DETECTIVE_QUESTIONS):
+            expect(fields.nth(i).locator(".title")).to_have_text(f"Vraag {i + 1}")
+            expect(fields.nth(i).locator(".sql-answer-question")).to_have_text(question)
+            expect(answer_field(fresh, i)).to_have_attribute("placeholder", "Schrijf hier je antwoord.")
+            expect(answer_field(fresh, i)).to_have_value("")
+            fields.nth(i).locator(".sql-answer-question").click()
+            expect(answer_field(fresh, i)).to_be_focused()
+
+        bar = fresh.locator(WORK_BAR)
+        expect(bar).to_have_count(1)
+        expect(bar.locator(".sql-live-note").first).to_contain_text("Je queries, je antwoorden en je databank")
+        order = [
+            fresh.locator(".sql-live-wrap").last,
+            fresh.locator("h2", has_text="Zaak gesloten?"),
+            *(fields.nth(i) for i in range(len(DETECTIVE_QUESTIONS))),
+            bar,
+        ]
+        tops = [box(element)["y"] for element in order]
+        assert tops == sorted(tops), f"volgorde op het scherm klopt niet: {tops}"
+        below = fresh.evaluate(
+            "() => { let text = ''; for (let n = document.querySelector('.sql-download-bar').nextElementSibling;"
+            " n; n = n.nextElementSibling) text += n.textContent; return text; }"
+        )
+        assert "doorslaggevende" not in below, f"onder de balk staat nog: {below[:200]!r}"
+    finally:
+        context.close()
+
+
+def test_detective_answers_survive_a_reload_and_go_along_in_download_and_upload(page, site_url, tmp_path) -> None:
+    """Het scenario uit #79: antwoorden typen, de pagina herladen (ze staan er
+    nog), "Download mijn queries" (de antwoorden staan na de cellen, elk onder
+    zijn vraag), opslag kwijt (een andere laptop) en "Upload mijn queries":
+    de antwoorden staan weer in de vakken, en blijven na een herlaad bewaard."""
+    context, fresh = open_fresh(page, site_url, DETECTIVE_PAGE)
+    try:
+        answers = [
+            "De badge_logs van stap 6.\nHij badgede 's avonds nog binnen, maar zegt dat hij thuis was.",
+            "Het wachtwoord hing op een post-it. Afspraak: je wachtwoord deel je met niemand.",
+            "",
+        ]
+        type_answer(fresh, 0, answers[0])
+        type_answer(fresh, 1, answers[1])
+        reload(fresh)
+        assert answer_values(fresh) == answers  # per browser bewaard, zoals de queries (#14)
+
+        path = download_queries(fresh, tmp_path)
+        assert path.name == "queries-03c_Detective.sql"
+        text = path.read_text(encoding="utf-8")
+        cells = len(editor_values(fresh))
+        assert text.startswith(f"-- Mijn queries — {DETECTIVE_PATH}\n"), text[:80]
+        tail = "".join(f"\n-- antwoord {i + 1}: {q}\n{a}\n" for i, (q, a) in enumerate(zip(DETECTIVE_QUESTIONS, answers)))
+        assert text.endswith(tail), text[-600:]
+        assert text.index(f"\n-- cel {cells}\n") < text.index("\n-- antwoord 1: "), "de antwoorden staan niet na de cellen"
+
+        fresh.evaluate("() => localStorage.clear()")
+        reload(fresh)
+        assert answer_values(fresh) == ["", "", ""]
+
+        upload(fresh, path)  # alleen startcode en lege vakken: geen bevestiging nodig
+        expect(upload_status(fresh)).to_have_text(
+            re.compile(rf"^Teruggezet: cellen 1, .* en {cells}; antwoorden 1, 2 en 3\.$")
+        )
+        assert answer_values(fresh) == answers
+        reload(fresh)
+        assert answer_values(fresh) == answers  # meteen bewaard
+    finally:
+        context.close()
+
+
+def test_detective_upload_asks_before_overwriting_a_filled_in_answer(page, site_url, tmp_path) -> None:
+    """Een ingevuld antwoord wordt pas na bevestiging overschreven, net als
+    eigen werk in een cel. Een bestand zonder antwoorden (van vóór #79, of van
+    een pagina zonder vakken) zet alleen de cellen terug en laat de antwoorden staan."""
+    context, fresh = open_fresh(page, site_url, DETECTIVE_PAGE)
+    try:
+        type_answer(fresh, 0, "mijn eigen antwoord")
+
+        old = tmp_path / "oud-queries-03c_Detective.sql"
+        old.write_text(queries_file(DETECTIVE_PATH, own_work("oud", 2)), encoding="utf-8")
+        upload(fresh, old)
+        expect(upload_status(fresh)).to_have_text("Teruggezet: cellen 1 en 2.")
+        assert editor_values(fresh)[:2] == own_work("oud", 2)
+        assert answer_values(fresh) == ["mijn eigen antwoord", "", ""]
+
+        other = tmp_path / "queries-03c_Detective.sql"
+        other.write_text(
+            f"-- Mijn queries — {DETECTIVE_PATH}\n\n"
+            "-- antwoord 1: vraag een\nhet antwoord uit het bestand\n\n"
+            "-- antwoord 2: vraag twee\ntweede antwoord\n",
+            encoding="utf-8",
+        )
+        messages: list[str] = []
+        fresh.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.dismiss()))
+        upload(fresh, other)
+        expect(upload_status(fresh)).to_have_text("Upload geannuleerd — er is niets gewijzigd.")
+        assert answer_values(fresh) == ["mijn eigen antwoord", "", ""]
+        assert messages == [
+            "Antwoord 1 van deze pagina is al ingevuld en wordt door het bestand overschreven.\n\nToch terugzetten?"
+        ], messages
+
+        messages.clear()
+        fresh.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
+        upload(fresh, other)
+        expect(upload_status(fresh)).to_have_text("Teruggezet: antwoorden 1 en 2.")
+        assert answer_values(fresh) == ["het antwoord uit het bestand", "tweede antwoord", ""]
+        assert len(messages) == 1, messages
+    finally:
+        context.close()
+
+
+def test_answers_in_a_file_for_a_page_without_answer_fields_are_reported(page, tmp_path) -> None:
+    """Op een pagina zonder antwoordvakken (hier SQL hoofdstuk 1) blijft alles
+    zoals vroeger; staan er toch antwoorden in het bestand, dan meldt de upload
+    dat ze nergens heen kunnen."""
+    expect(page.locator(ANSWER)).to_have_count(0)
+    expect(page.locator(WORK_BAR).locator(".sql-live-note").first).to_contain_text("Je queries en je databank")
+    click_startcode(page, 0)
+    work = own_work("zonder_vak", 1)
+    path = tmp_path / "queries-01_Starten_met_sql.sql"
+    path.write_text(queries_file(PAGE_PATH, work) + "\n-- antwoord 1: een vraag\neen antwoord\n", encoding="utf-8")
+    upload(page, path)
+    expect(upload_status(page)).to_have_text(
+        "Teruggezet: cel 1. Niet teruggezet: antwoord 1 — deze pagina heeft geen antwoordvakken."
+    )
+    assert editor_values(page)[0] == work[0]
