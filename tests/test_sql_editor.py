@@ -13,9 +13,10 @@ herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
 tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
 laat "Groot scherm" één cel de hele viewport vullen (issue #48). De
 autocomplete vult namen met hoofdletters (AdventureWorks) gewoon aan, zonder
-backticks eromheen (issue #53). De slotvragen van de Detective-les (SQL
-hoofdstuk 3) hebben elk een antwoordvak boven de balk "Mijn werk"; de
-antwoorden blijven bewaard en gaan mee in de download en de upload (issue #79).
+backticks eromheen (issue #53). De slotvragen van de Detective-lessen (SQL
+hoofdstuk 3 en 5) hebben elk een antwoordvak boven de balk "Mijn werk"; de
+antwoorden blijven bewaard en gaan mee in de download en de upload (issues
+#79 en #81).
 
 Twee lagen:
 
@@ -43,6 +44,7 @@ import sqlite3
 import subprocess
 import threading
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -1328,22 +1330,65 @@ def test_autocomplete_completes_adventureworks_names_without_backticks(page, sit
         context.close()
 
 
-# --- e2e: antwoordvakken in de Detective-les (#79) ---------------------------
+# --- e2e: antwoordvakken in de Detective-lessen (#79, #81) ------------------
 
 # De drie slotvragen van "Zaak gesloten?" stonden onder de balk "Mijn werk",
 # zonder plaats om te antwoorden, en kwamen niet mee in "Download mijn
 # queries". Nu is elke vraag een cel met tag sql-answer, die sql-editors.js
 # tot een tekstvak maakt: boven de balk, per browser bewaard zoals een query
-# (#14), en mee in het bestand van de download en de upload.
+# (#14), en mee in het bestand van de download en de upload. Zo in de
+# Detective-les van SQL hoofdstuk 3 (#79) en die van hoofdstuk 5 (#81).
 DETECTIVE_PAGE = "chapters/SQL/03c_Detective.html"
 DETECTIVE_PATH = "/" + DETECTIVE_PAGE
 ANSWER = ".sql-answer"
-DETECTIVE_QUESTIONS = [
-    "Welke query leverde het doorslaggevende bewijs?",
-    "De fraudeur gebruikte het account van iemand anders. Hoe raakte hij aan dat wachtwoord, "
-    "en welke afspraak binnen het bedrijf had dit kunnen voorkomen?",
-    "Stel dat de fraudeur zijn sporen had willen wissen: in welke tabellen had hij dan moeten knoeien?",
+
+
+class DetectiveLesson(NamedTuple):
+    page: str
+    questions: list[str]  # de slotvragen, precies zoals in de antwoordvakken
+    answers: list[str]  # wat de leerling typt; een leeg vak blijft leeg
+    marker: str  # een woord uit de oude slotvragen, dat onder de balk niet meer mag staan
+
+
+DETECTIVE_LESSONS = [
+    DetectiveLesson(
+        DETECTIVE_PAGE,
+        [
+            "Welke query leverde het doorslaggevende bewijs?",
+            "De fraudeur gebruikte het account van iemand anders. Hoe raakte hij aan dat wachtwoord, "
+            "en welke afspraak binnen het bedrijf had dit kunnen voorkomen?",
+            "Stel dat de fraudeur zijn sporen had willen wissen: in welke tabellen had hij dan moeten knoeien?",
+        ],
+        [
+            "De badge_logs van stap 6.\nHij badgede 's avonds nog binnen, maar zegt dat hij thuis was.",
+            "Het wachtwoord hing op een post-it. Afspraak: je wachtwoord deel je met niemand.",
+            "",
+        ],
+        "doorslaggevende",
+    ),
+    DetectiveLesson(
+        "chapters/SQL/05c_Detective.html",
+        [
+            "In stap 3 wees COUNT(*) naar de verkeerde persoon, in stap 5 wees SUM(...) naar de dader. "
+            "Hoe kan dat, en wat leert je dat over het kiezen van een aggregatiefunctie?",
+            'De fraudeur werkte "in schijfjes": per keer boekte hij maar een enkele fiets af. Waarom is net '
+            "daarom een samenvatting per groep (GROUP BY) het enige wapen dat werkt?",
+            "Welke afspraak had deze fraude kunnen voorkomen? Denk aan een tweede handtekening boven een "
+            "bepaald bedrag, een verplichte schadeclaim bij de vervoerder, of een kwartaalrapport zoals dat "
+            "van stap 5.",
+        ],
+        [
+            "COUNT telt hoe vaak, SUM telt op wat het waard is.\nKarim boekte vaak af, maar telkens kleine dingen.",
+            "Elke losse rij ziet er onschuldig uit. Pas de som per medewerker toont het fortuin.",
+            "",
+        ],
+        "schijfjes",
+    ),
 ]
+
+
+def detective_id(lesson: DetectiveLesson) -> str:
+    return Path(lesson.page).stem
 
 
 def answer_field(page, index: int):
@@ -1371,16 +1416,17 @@ def download_queries(page, tmp_path: Path) -> Path:
     return path
 
 
-def test_detective_closing_questions_are_answer_fields_above_the_work_bar(page, site_url) -> None:
+@pytest.mark.parametrize("lesson", DETECTIVE_LESSONS, ids=detective_id)
+def test_detective_closing_questions_are_answer_fields_above_the_work_bar(page, site_url, lesson) -> None:
     """Elke slotvraag heeft een eigen tekstvak, met de vraag als label (klikken
     op de vraag zet de cursor in het vak). Op het scherm staan na elkaar: de
     laatste editorcel (de ontknoping), de kop "Zaak gesloten?", de drie vakken
     en pas dan de balk "Mijn werk" — en onder de balk staan de vragen niet meer."""
-    context, fresh = open_fresh(page, site_url, DETECTIVE_PAGE)
+    context, fresh = open_fresh(page, site_url, lesson.page)
     try:
         fields = fresh.locator(ANSWER)
-        expect(fields).to_have_count(len(DETECTIVE_QUESTIONS))
-        for i, question in enumerate(DETECTIVE_QUESTIONS):
+        expect(fields).to_have_count(len(lesson.questions))
+        for i, question in enumerate(lesson.questions):
             expect(fields.nth(i).locator(".title")).to_have_text(f"Vraag {i + 1}")
             expect(fields.nth(i).locator(".sql-answer-question")).to_have_text(question)
             expect(answer_field(fresh, i)).to_have_attribute("placeholder", "Schrijf hier je antwoord.")
@@ -1394,7 +1440,7 @@ def test_detective_closing_questions_are_answer_fields_above_the_work_bar(page, 
         order = [
             fresh.locator(".sql-live-wrap").last,
             fresh.locator("h2", has_text="Zaak gesloten?"),
-            *(fields.nth(i) for i in range(len(DETECTIVE_QUESTIONS))),
+            *(fields.nth(i) for i in range(len(lesson.questions))),
             bar,
         ]
         tops = [box(element)["y"] for element in order]
@@ -1403,40 +1449,40 @@ def test_detective_closing_questions_are_answer_fields_above_the_work_bar(page, 
             "() => { let text = ''; for (let n = document.querySelector('.sql-download-bar').nextElementSibling;"
             " n; n = n.nextElementSibling) text += n.textContent; return text; }"
         )
-        assert "doorslaggevende" not in below, f"onder de balk staat nog: {below[:200]!r}"
+        assert lesson.marker not in below, f"onder de balk staat nog: {below[:200]!r}"
     finally:
         context.close()
 
 
-def test_detective_answers_survive_a_reload_and_go_along_in_download_and_upload(page, site_url, tmp_path) -> None:
+@pytest.mark.parametrize("lesson", DETECTIVE_LESSONS, ids=detective_id)
+def test_detective_answers_survive_a_reload_and_go_along_in_download_and_upload(
+    page, site_url, tmp_path, lesson
+) -> None:
     """Het scenario uit #79: antwoorden typen, de pagina herladen (ze staan er
     nog), "Download mijn queries" (de antwoorden staan na de cellen, elk onder
     zijn vraag), opslag kwijt (een andere laptop) en "Upload mijn queries":
     de antwoorden staan weer in de vakken, en blijven na een herlaad bewaard."""
-    context, fresh = open_fresh(page, site_url, DETECTIVE_PAGE)
+    context, fresh = open_fresh(page, site_url, lesson.page)
     try:
-        answers = [
-            "De badge_logs van stap 6.\nHij badgede 's avonds nog binnen, maar zegt dat hij thuis was.",
-            "Het wachtwoord hing op een post-it. Afspraak: je wachtwoord deel je met niemand.",
-            "",
-        ]
-        type_answer(fresh, 0, answers[0])
-        type_answer(fresh, 1, answers[1])
+        answers = lesson.answers
+        for i, answer in enumerate(answers):
+            if answer:
+                type_answer(fresh, i, answer)
         reload(fresh)
         assert answer_values(fresh) == answers  # per browser bewaard, zoals de queries (#14)
 
         path = download_queries(fresh, tmp_path)
-        assert path.name == "queries-03c_Detective.sql"
+        assert path.name == f"queries-{Path(lesson.page).stem}.sql"
         text = path.read_text(encoding="utf-8")
         cells = len(editor_values(fresh))
-        assert text.startswith(f"-- Mijn queries — {DETECTIVE_PATH}\n"), text[:80]
-        tail = "".join(f"\n-- antwoord {i + 1}: {q}\n{a}\n" for i, (q, a) in enumerate(zip(DETECTIVE_QUESTIONS, answers)))
+        assert text.startswith(f"-- Mijn queries — /{lesson.page}\n"), text[:80]
+        tail = "".join(f"\n-- antwoord {i + 1}: {q}\n{a}\n" for i, (q, a) in enumerate(zip(lesson.questions, answers)))
         assert text.endswith(tail), text[-600:]
         assert text.index(f"\n-- cel {cells}\n") < text.index("\n-- antwoord 1: "), "de antwoorden staan niet na de cellen"
 
         fresh.evaluate("() => localStorage.clear()")
         reload(fresh)
-        assert answer_values(fresh) == ["", "", ""]
+        assert answer_values(fresh) == ["" for _ in answers]
 
         upload(fresh, path)  # alleen startcode en lege vakken: geen bevestiging nodig
         expect(upload_status(fresh)).to_have_text(
