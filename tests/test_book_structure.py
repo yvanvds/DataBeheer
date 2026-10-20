@@ -10,6 +10,7 @@ canonieke links naar de site van main in /main/ (issue #67),
 BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68),
 JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
 hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
+tien oefeningen op de aggregatiefuncties in SQL hoofdstuk 4 (issue #85),
 de uitleg van dat hoofdstuk zonder taalfouten (issue #74) en dezelfde
 controle over alle hoofdstukken, met spaties op het einde van een regel erbij
 (issue #76), de Detective-lessen van SQL hoofdstuk 3 en 5 zonder de tabel
@@ -1085,20 +1086,25 @@ JOIN_SECTIONS = [
 ]
 
 
-def join_exercises(heading: re.Pattern) -> list[tuple[int, str]]:
-    """[(nummer, opgave)] uit de oefeningencel van een paragraaf van het
-    JOIN-hoofdstuk: de ene sql-live-cel met `--- N.`-regels. Die cel is
-    startcode voor de leerling en bevat verder niets dan lege regels."""
+def section_exercises(rel: str, heading: re.Pattern) -> list[tuple[int, str]]:
+    """[(nummer, opgave)] uit de oefeningencel van een paragraaf: de ene
+    sql-live-cel met `--- N.`-regels. Die cel is startcode voor de leerling en
+    bevat verder niets dan lege regels."""
     live = [
         "".join(c["source"])
-        for c in section_cells(JOIN_CHAPTER, heading)
+        for c in section_cells(rel, heading)
         if c["cell_type"] == "code" and "sql-live" in c.get("metadata", {}).get("tags", [])
     ]
     cells = [sql for sql in live if EXERCISE_LINE.search(sql)]
-    assert len(cells) == 1, f"{JOIN_CHAPTER}: {len(cells)} oefeningencellen onder /{heading.pattern}/, verwacht één"
+    assert len(cells) == 1, f"{rel}: {len(cells)} oefeningencellen onder /{heading.pattern}/, verwacht één"
     other = [line for line in cells[0].splitlines() if line.strip() and not EXERCISE_LINE.match(line)]
-    assert not other, f"{JOIN_CHAPTER}: de oefeningencel onder /{heading.pattern}/ bevat meer dan opgaven: {other}"
+    assert not other, f"{rel}: de oefeningencel onder /{heading.pattern}/ bevat meer dan opgaven: {other}"
     return [(int(n), text.strip()) for n, text in EXERCISE_LINE.findall(cells[0])]
+
+
+def join_exercises(heading: re.Pattern) -> list[tuple[int, str]]:
+    """[(nummer, opgave)] uit de oefeningencel van een paragraaf van het JOIN-hoofdstuk."""
+    return section_exercises(JOIN_CHAPTER, heading)
 
 
 def join_seed() -> Path:
@@ -1177,6 +1183,26 @@ def test_join_model_solutions_use_join_and_return_rows_on_webshop_db() -> None:
     finally:
         con.close()
     assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+
+
+# Aggregatiefuncties (issue #85): de eerste oefenreeks van SQL hoofdstuk 4,
+# onder §1, had maar twee opgaven (minimum, maximum en gemiddelde prijs, en de
+# gemiddelde prijs van 'Computers'). Zo bleef er te weinig tijd om COUNT, SUM,
+# AVG, MIN en MAX in te oefenen voor GROUP BY in §2 erbij komt. Nu zijn het er
+# tien, van één functie op één tabel tot een JOIN met een berekening in SUM,
+# met WHERE op verschillende manieren.
+GROUP_BY_CHAPTER = "chapters/SQL/04_GROUP_BY"
+AGGREGATE_HEADING = re.compile(r"^## \d+\. Aggregatiefuncties\s*$", flags=re.MULTILINE)
+AGGREGATE_EXERCISE_COUNT = 10
+
+
+def test_aggregate_functions_section_has_ten_exercises() -> None:
+    """Issue #85: de oefeningencel onder §1 Aggregatiefuncties van hoofdstuk 4
+    heeft tien opgaven, genummerd van 1 tot en met 10."""
+    numbers = [n for n, _ in section_exercises(GROUP_BY_CHAPTER, AGGREGATE_HEADING)]
+    assert numbers == list(range(1, AGGREGATE_EXERCISE_COUNT + 1)), (
+        f"{GROUP_BY_CHAPTER} §1: opgaven {numbers}, verwacht 1 tot en met {AGGREGATE_EXERCISE_COUNT}"
+    )
 
 
 # Taalfouten in de uitleg van het JOIN-hoofdstuk (issue #74): "is is", "Het
