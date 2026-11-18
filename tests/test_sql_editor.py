@@ -1335,6 +1335,74 @@ def test_slash_types_a_division_in_the_editor(laptop_page) -> None:
     assert slash_caught_by_the_book(laptop_page), "'/' buiten de editor opent de zoekbalk niet meer"
 
 
+# --- e2e: lange regels breken af (#88) --------------------------------------
+
+# De startcode van oefenreeksen bevat opdrachten als lange commentaarregels.
+# Zonder word-wrap liepen die buiten beeld en moest de leerling eerst zelf
+# enters toevoegen om de opdracht te kunnen lezen.
+
+LONG_TASK = (
+    "--- 1. De directie overweegt om de prijzen van alle producten in de "
+    "categorie Bikes te verhogen; toon per subcategorie het aantal producten, "
+    "de gemiddelde prijs en de hoogste prijs, gesorteerd van duur naar goedkoop."
+)
+
+
+def editor_geometry(page) -> dict:
+    """Breedtes van de scroller van de eerste cel, plus de rechterrand van de
+    lange regel en de linkerrand van de inhoud (rechts van de regelnummers)."""
+    return page.evaluate(
+        """() => {
+          const wrap = document.querySelector('.sql-live-wrap');
+          const scroller = wrap.querySelector('.cm-scroller');
+          const content = wrap.querySelector('.cm-content').getBoundingClientRect();
+          const line = wrap.querySelector('.cm-line').getBoundingClientRect();
+          const gutter = wrap.querySelector('.cm-gutters').getBoundingClientRect();
+          return {
+            scrollWidth: scroller.scrollWidth,
+            clientWidth: scroller.clientWidth,
+            scrollerRight: scroller.getBoundingClientRect().right,
+            lineRight: line.right,
+            lineHeight: line.height,
+            contentLeft: content.left,
+            gutterRight: gutter.right,
+            lineNumbers: [...wrap.querySelectorAll('.cm-gutter.cm-lineNumbers .cm-gutterElement')]
+              .filter(e => e.offsetHeight > 0 && e.textContent.trim()).map(e => e.textContent.trim()),
+          };
+        }"""
+    )
+
+
+def assert_wraps(page) -> None:
+    g = editor_geometry(page)
+    assert g["scrollWidth"] <= g["clientWidth"] + 1, f"horizontale scrollbalk: {g}"
+    assert g["lineRight"] <= g["scrollerRight"] + 1, f"regel loopt buiten beeld: {g}"
+    # De regel breekt af over meerdere schermregels, rechts van de regelnummers,
+    # en die blijven per logische regel genummerd (1, 2), niet per schermregel.
+    assert g["lineHeight"] > 30, f"lange regel breekt niet af: {g}"
+    assert g["contentLeft"] >= g["gutterRight"] - 1, f"tekst schuift onder de regelnummers: {g}"
+    assert g["lineNumbers"] == ["1", "2"], g
+
+
+def test_long_task_lines_wrap_inside_the_editor(laptop_page) -> None:
+    """Een lange opdrachtregel breekt af binnen de breedte van de editor, in
+    de gewone en de schermvullende stand, zonder horizontale scrollbalk; de
+    tekst zelf blijft ongewijzigd (geen ingevoegde enters)."""
+    doc = LONG_TASK + "\nSELECT 1;"
+    load_sql(laptop_page, doc)
+    assert laptop_page.evaluate("() => window.sqlLive.editors[0].getValue()") == doc
+    assert_wraps(laptop_page)
+
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+    try:
+        assert_wraps(laptop_page)
+    finally:
+        btn.click()
+        expect(btn).to_have_attribute("aria-pressed", "false")
+
+
 # --- e2e: autocomplete zonder aanhalingstekens (#53) -------------------------
 
 ADVENTUREWORKS_PAGE = "chapters/SQL/01b_AdventureWorks.html"

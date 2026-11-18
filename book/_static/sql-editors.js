@@ -874,6 +874,9 @@ function editorExtensions(langCompartment, run, runAll, onDocChange) {
     closeBrackets(),
     autocompletion(),
     highlightActiveLine(),
+    // Lange regels (zoals de opdrachten in de startcode) breken af binnen de
+    // editor in plaats van buiten beeld te lopen (#88).
+    EditorView.lineWrapping,
     runTargetField,
     plinkTheme,
     syntaxHighlighting(plinkHighlight),
