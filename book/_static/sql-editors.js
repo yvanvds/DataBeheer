@@ -939,6 +939,14 @@ function initEditors(blocks) {
       }),
       parent: ui.editorEl,
     });
+    // Toetsen in de editor horen bij de editor (#87): Sphinx' doctools.js
+    // vangt op document `/` af (zoekbalk) en slaat alleen INPUT/TEXTAREA
+    // over, niet de contenteditable van CodeMirror. Dus geen keydown verder
+    // laten bubbelen dan de editor — behalve Esc, die de document-handlers
+    // voor schermvullend (hierboven) en het schema-overlay nodig hebben.
+    view.dom.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') e.stopPropagation();
+    });
     rec.view = view;
     rec.flush = syncStorage;
     cells.push(rec);

@@ -1280,6 +1280,61 @@ def test_schema_stays_reachable_and_esc_closes_it_before_the_fullscreen(laptop_p
     assert page_scrolls(laptop_page)
 
 
+# --- e2e: '/' typen in de editor (#87) ---------------------------------------
+
+# Sphinx' doctools.js vangt '/' op document af om de zoekbalk te openen en
+# slaat daarbij alleen INPUT/TEXTAREA/SELECT over, niet de contenteditable van
+# CodeMirror. Een deling als SUM(...) / COUNT(...) was zo niet te typen.
+
+def search_input_focused(page) -> bool:
+    return page.evaluate("() => document.activeElement.matches('input[name=q]')")
+
+
+def slash_caught_by_the_book(page) -> bool:
+    """Drukt '/' en meldt of de sneltoets van het boek (doctools.js op
+    document) hem afving. Het zoekveld zelf zit in dit thema in een verborgen
+    dialoog en krijgt dus niet altijd de focus; `preventDefault` is het teken
+    dat de handler hem verwerkte."""
+    page.evaluate(
+        "() => window.addEventListener('keydown', e => { if (e.key === '/') "
+        "window.__slashCaught = e.defaultPrevented; }, { once: true })"
+    )
+    page.keyboard.press("/")
+    return page.evaluate("() => window.__slashCaught === true")
+
+
+def test_slash_types_a_division_in_the_editor(laptop_page) -> None:
+    """Een leerling typt een deling in de editor: het '/' komt in de query,
+    de cursor blijft in de editor en de query rekent het juiste resultaat uit.
+    Esc sluit de schermvullende stand nog steeds vanuit de editor, en buiten
+    de editor opent '/' nog altijd de zoekbalk."""
+    load_sql(laptop_page, "")
+
+    # Esc vanuit de editor sluit nog altijd de schermvullende stand. (Vóór het
+    # typen: vlak na het typen sluit Esc eerst de autocomplete van CodeMirror,
+    # zie de Esc-handler in sql-editors.js.)
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    laptop_page.keyboard.press("Escape")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+
+    cell(laptop_page).locator(".cm-content").click()
+    laptop_page.keyboard.type("SELECT 6 / 3 AS deling;")
+
+    assert laptop_page.evaluate("() => window.sqlLive.editors[0].getValue()") == "SELECT 6 / 3 AS deling;"
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    assert not search_input_focused(laptop_page)
+    laptop_page.keyboard.press("Control+Enter")
+    expect(result_headers(laptop_page)).to_have_text(["deling"])
+    expect(output(laptop_page).locator("td")).to_have_text(["2"])
+
+    # Buiten de editor blijft de sneltoets van het boek werken.
+    laptop_page.evaluate("() => document.activeElement.blur()")
+    assert slash_caught_by_the_book(laptop_page), "'/' buiten de editor opent de zoekbalk niet meer"
+
+
 # --- e2e: autocomplete zonder aanhalingstekens (#53) -------------------------
 
 ADVENTUREWORKS_PAGE = "chapters/SQL/01b_AdventureWorks.html"
