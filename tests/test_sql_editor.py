@@ -1280,6 +1280,129 @@ def test_schema_stays_reachable_and_esc_closes_it_before_the_fullscreen(laptop_p
     assert page_scrolls(laptop_page)
 
 
+# --- e2e: '/' typen in de editor (#87) ---------------------------------------
+
+# Sphinx' doctools.js vangt '/' op document af om de zoekbalk te openen en
+# slaat daarbij alleen INPUT/TEXTAREA/SELECT over, niet de contenteditable van
+# CodeMirror. Een deling als SUM(...) / COUNT(...) was zo niet te typen.
+
+def search_input_focused(page) -> bool:
+    return page.evaluate("() => document.activeElement.matches('input[name=q]')")
+
+
+def slash_caught_by_the_book(page) -> bool:
+    """Drukt '/' en meldt of de sneltoets van het boek (doctools.js op
+    document) hem afving. Het zoekveld zelf zit in dit thema in een verborgen
+    dialoog en krijgt dus niet altijd de focus; `preventDefault` is het teken
+    dat de handler hem verwerkte."""
+    page.evaluate(
+        "() => window.addEventListener('keydown', e => { if (e.key === '/') "
+        "window.__slashCaught = e.defaultPrevented; }, { once: true })"
+    )
+    page.keyboard.press("/")
+    return page.evaluate("() => window.__slashCaught === true")
+
+
+def test_slash_types_a_division_in_the_editor(laptop_page) -> None:
+    """Een leerling typt een deling in de editor: het '/' komt in de query,
+    de cursor blijft in de editor en de query rekent het juiste resultaat uit.
+    Esc sluit de schermvullende stand nog steeds vanuit de editor, en buiten
+    de editor opent '/' nog altijd de zoekbalk."""
+    load_sql(laptop_page, "")
+
+    # Esc vanuit de editor sluit nog altijd de schermvullende stand. (Vóór het
+    # typen: vlak na het typen sluit Esc eerst de autocomplete van CodeMirror,
+    # zie de Esc-handler in sql-editors.js.)
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    laptop_page.keyboard.press("Escape")
+    expect(btn).to_have_attribute("aria-pressed", "false")
+
+    cell(laptop_page).locator(".cm-content").click()
+    laptop_page.keyboard.type("SELECT 6 / 3 AS deling;")
+
+    assert laptop_page.evaluate("() => window.sqlLive.editors[0].getValue()") == "SELECT 6 / 3 AS deling;"
+    assert laptop_page.evaluate("() => !!document.activeElement.closest('.sql-live-editor')")
+    assert not search_input_focused(laptop_page)
+    laptop_page.keyboard.press("Control+Enter")
+    expect(result_headers(laptop_page)).to_have_text(["deling"])
+    expect(output(laptop_page).locator("td")).to_have_text(["2"])
+
+    # Buiten de editor blijft de sneltoets van het boek werken.
+    laptop_page.evaluate("() => document.activeElement.blur()")
+    assert slash_caught_by_the_book(laptop_page), "'/' buiten de editor opent de zoekbalk niet meer"
+
+
+# --- e2e: lange regels breken af (#88) --------------------------------------
+
+# De startcode van oefenreeksen bevat opdrachten als lange commentaarregels.
+# Zonder word-wrap liepen die buiten beeld en moest de leerling eerst zelf
+# enters toevoegen om de opdracht te kunnen lezen.
+
+LONG_TASK = (
+    "--- 1. De directie overweegt om de prijzen van alle producten in de "
+    "categorie Bikes te verhogen; toon per subcategorie het aantal producten, "
+    "de gemiddelde prijs en de hoogste prijs, gesorteerd van duur naar goedkoop."
+)
+
+
+def editor_geometry(page) -> dict:
+    """Breedtes van de scroller van de eerste cel, plus de rechterrand van de
+    lange regel en de linkerrand van de inhoud (rechts van de regelnummers)."""
+    return page.evaluate(
+        """() => {
+          const wrap = document.querySelector('.sql-live-wrap');
+          const scroller = wrap.querySelector('.cm-scroller');
+          const content = wrap.querySelector('.cm-content').getBoundingClientRect();
+          const line = wrap.querySelector('.cm-line').getBoundingClientRect();
+          const gutter = wrap.querySelector('.cm-gutters').getBoundingClientRect();
+          return {
+            scrollWidth: scroller.scrollWidth,
+            clientWidth: scroller.clientWidth,
+            scrollerRight: scroller.getBoundingClientRect().right,
+            lineRight: line.right,
+            lineHeight: line.height,
+            contentLeft: content.left,
+            gutterRight: gutter.right,
+            lineNumbers: [...wrap.querySelectorAll('.cm-gutter.cm-lineNumbers .cm-gutterElement')]
+              .filter(e => e.offsetHeight > 0 && e.textContent.trim()).map(e => e.textContent.trim()),
+          };
+        }"""
+    )
+
+
+def assert_wraps(page) -> None:
+    g = editor_geometry(page)
+    assert g["scrollWidth"] <= g["clientWidth"] + 1, f"horizontale scrollbalk: {g}"
+    assert g["lineRight"] <= g["scrollerRight"] + 1, f"regel loopt buiten beeld: {g}"
+    # De regel breekt af over meerdere schermregels, rechts van de regelnummers,
+    # en die blijven per logische regel genummerd (1, 2), niet per schermregel.
+    assert g["lineHeight"] > 30, f"lange regel breekt niet af: {g}"
+    assert g["contentLeft"] >= g["gutterRight"] - 1, f"tekst schuift onder de regelnummers: {g}"
+    assert g["lineNumbers"] == ["1", "2"], g
+
+
+def test_long_task_lines_wrap_inside_the_editor(laptop_page) -> None:
+    """Een lange opdrachtregel breekt af binnen de breedte van de editor, in
+    de gewone en de schermvullende stand, zonder horizontale scrollbalk; de
+    tekst zelf blijft ongewijzigd (geen ingevoegde enters)."""
+    doc = LONG_TASK + "\nSELECT 1;"
+    load_sql(laptop_page, doc)
+    assert laptop_page.evaluate("() => window.sqlLive.editors[0].getValue()") == doc
+    assert_wraps(laptop_page)
+
+    btn = fullscreen_button(laptop_page)
+    btn.click()
+    expect(btn).to_have_attribute("aria-pressed", "true")
+    try:
+        assert_wraps(laptop_page)
+    finally:
+        btn.click()
+        expect(btn).to_have_attribute("aria-pressed", "false")
+
+
 # --- e2e: autocomplete zonder aanhalingstekens (#53) -------------------------
 
 ADVENTUREWORKS_PAGE = "chapters/SQL/01b_AdventureWorks.html"
