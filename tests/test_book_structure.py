@@ -10,6 +10,7 @@ canonieke links naar de site van main in /main/ (issue #67),
 BETWEEN met beide grenzen erbij in SQL hoofdstuk 2 (issue #68),
 JOIN-oefeningen in SQL hoofdstuk 3 die op te lossen zijn met JOIN plus
 hoofdstuk 1 en 2 en rijen opleveren op webshop.db (issue #73),
+queries met de volledige tabelnaam in plaats van een tabelalias (issue #90),
 tien oefeningen op de aggregatiefuncties in SQL hoofdstuk 4 (issue #85),
 de uitleg van dat hoofdstuk zonder taalfouten (issue #74) en dezelfde
 controle over alle hoofdstukken, met spaties op het einde van een regel erbij
@@ -835,8 +836,8 @@ def test_sql_cell_columns_exist_in_the_table_they_are_read_from() -> None:
                             )
     assert not problems, "kolommen die niet bestaan in de tabel waaruit ze gelezen worden:\n" + "\n".join(problems)
     # Waar de test voor bestaat: het normalisatiehoofdstuk bouwt zijn tabellen
-    # in de cellen zelf en leest met aliassen uit de seed, dus daar is elke
-    # verwijzing na te gaan.
+    # in de cellen zelf en leest kolommen als `orders_wide.order_date` uit de
+    # seed, dus daar is elke verwijzing na te gaan.
     assert "chapters/ERD/02_normalisatie" in checked, f"er is niets nagekeken: {checked}"
 
 
@@ -1183,6 +1184,62 @@ def test_join_model_solutions_use_join_and_return_rows_on_webshop_db() -> None:
     finally:
         con.close()
     assert not problems, f"{JOIN_CHAPTER}:\n" + "\n".join(problems)
+
+
+# Tabelaliassen (issue #90): korte namen voor tabellen (`FROM customers c`,
+# `c.first_name`) raden we af. Typ je `customers.`, dan stelt de editor meteen
+# de kolommen van die tabel voor, ook als de FROM er nog niet staat; na `c.`
+# doet hij dat pas als de alias al in de cel staat, en wie van boven naar
+# onder typt, heeft die nog niet geschreven. Hoofdstuk 3 leerde de aliassen
+# toch aan, en ook Power BI en de ERD-hoofdstukken gebruikten ze. Elke query in
+# de hoofdstukken (een sql-live-cel of een ```sql-blok in de uitleg) schrijft
+# de tabelnaam daarom voluit. Kolomaliassen (`AS klant`) blijven gewoon.
+ALIAS_CHAPTERS = [
+    JOIN_CHAPTER,
+    "chapters/BIG_DATA/02_Power_BI",
+    FIRST_ERD,
+    "chapters/ERD/02_normalisatie",
+    "chapters/ERD/05_de_cafetaria",
+]
+# Het begin van de tip in §2 van het JOIN-hoofdstuk, zoals de leerling het leest.
+JOIN_TIP = "In deze cursus schrijven we de naam van de tabel altijd voluit"
+
+
+def chapter_queries(rel: str) -> list[str]:
+    """De SQL van een hoofdstuk: de sql-live-cellen en de ```sql-blokken in de uitleg."""
+    return code_cells_tagged(rel, "sql-live") + SQL_FENCE.findall(source_of(rel))
+
+
+def test_chapter_queries_write_table_names_in_full() -> None:
+    """Issue #90: geen enkele query in de hoofdstukken haalt een tabel binnen
+    onder een alias (`FROM customers c`, `JOIN orders AS o`)."""
+    problems = []
+    checked = set()
+    for part in ("SQL", "BIG_DATA", "ERD"):
+        for notebook in chapter_notebooks(part):
+            rel = notebook.relative_to(BOOK).with_suffix("").as_posix()
+            for sql in chapter_queries(rel):
+                for statement in sql_statements(sql):
+                    for table, alias in SQL_SOURCE.findall(statement):
+                        checked.add(rel)
+                        if alias and alias.lower() not in NOT_AN_ALIAS:
+                            problems.append(f"{rel}: `{table} {alias}` in\n    " + statement.replace("\n", "\n    "))
+    assert not problems, "tabelaliassen, schrijf de tabelnaam voluit:\n" + "\n".join(problems)
+    # Waar de test voor bestaat: de hoofdstukken die aliassen gebruikten.
+    for rel in ALIAS_CHAPTERS:
+        assert rel in checked, f"{rel}: geen query gevonden, er is niets nagekeken"
+
+
+def test_join_chapter_explains_why_table_names_are_written_in_full() -> None:
+    """Issue #90: §2 van het JOIN-hoofdstuk leerde aliassen aan ("Telkens de
+    naam van de tabel uitschrijven is wel veel werk"). Nu zegt het dat we de
+    tabelnaam voluit schrijven, en waarom: dan stelt de editor de kolommen voor."""
+    text = "\n".join(
+        "".join(c["source"]) for c in section_cells(JOIN_CHAPTER, INNER_JOIN_HEADING) if c["cell_type"] == "markdown"
+    )
+    assert "uitschrijven is wel veel werk" not in text, f"{JOIN_CHAPTER}: §2 leert nog tabelaliassen aan"
+    assert re.search(r"\bvoluit\b", text), f"{JOIN_CHAPTER}: §2 zegt niet dat we de tabelnaam voluit schrijven"
+    assert re.search(r"\beditor\b", text), f"{JOIN_CHAPTER}: §2 zegt niet waarom (de editor stelt de kolommen voor)"
 
 
 # Aggregatiefuncties (issue #85): de eerste oefenreeks van SQL hoofdstuk 4,
@@ -1744,6 +1801,27 @@ def test_html_join_explanation_shows_the_corrected_sentences() -> None:
     problems = find_phrases(visible, LANGUAGE_SLIPS)
     problems += [f"{sentence!r} staat niet op de gebouwde pagina" for sentence in CORRECTED_SENTENCES if sentence not in visible]
     assert not problems, f"{JOIN_CHAPTER} (gebouwd):\n" + "\n".join(problems)
+
+
+def test_html_queries_show_full_table_names_and_the_join_tip() -> None:
+    """Issue #90: wat de leerling ziet — geen codeblok op de gebouwde pagina's
+    die aliassen gebruikten haalt nog een tabel binnen onder een alias, en het
+    JOIN-hoofdstuk toont de tip om de tabelnaam voluit te schrijven."""
+    problems = []
+    for rel in ALIAS_CHAPTERS:
+        blocks = re.findall(r"<pre[^>]*>(.*?)</pre>", article_html(rel), flags=re.DOTALL)
+        assert blocks, f"{rel}: geen codeblokken op de gebouwde pagina"
+        for block in blocks:
+            for statement in sql_statements(html.unescape(re.sub(r"<[^>]+>", "", block))):
+                problems += [
+                    f"{rel}: `{table} {alias}`"
+                    for table, alias in SQL_SOURCE.findall(statement)
+                    if alias and alias.lower() not in NOT_AN_ALIAS
+                ]
+    visible = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", article_html(JOIN_CHAPTER))))
+    if JOIN_TIP not in visible:
+        problems.append(f"{JOIN_CHAPTER}: de tip {JOIN_TIP!r} staat niet op de gebouwde pagina")
+    assert not problems, "gebouwde pagina's:\n" + "\n".join(problems)
 
 
 def test_html_detective_hides_controle_shows_hints_without_queries_and_answer_cells_last() -> None:
