@@ -10,8 +10,10 @@ hoofdstuk 1 loopt met "Run alles" en regel per regel zonder syntaxfout (issue
 #43). De editor zet die bewaking zelf aan bij het openen van elke sessie, op
 elke pagina en ook na Reset db, zodat de lessen er niet meer aan hoeven te
 herinneren (issue #46). Het normalisatiehoofdstuk (ERD 2) draait van de eerste
-tot de laatste cel op de site-editor (issue #49). Op een klein leerlingenscherm
-laat "Groot scherm" één cel de hele viewport vullen (issue #48). De
+tot de laatste cel op de site-editor (issue #49), en de JOIN-voorbeelden van
+SQL hoofdstuk 3 lopen er met volledige tabelnamen (issue #90). Op een klein
+leerlingenscherm laat "Groot scherm" één cel de hele viewport vullen (issue
+#48). De
 autocomplete vult namen met hoofdletters (AdventureWorks) gewoon aan, zonder
 backticks eromheen (issue #53). De slotvragen van de Detective-lessen (SQL
 hoofdstuk 3 en 5) hebben elk een antwoordvak boven de balk "Mijn werk"; de
@@ -1118,6 +1120,39 @@ def test_normalisation_lesson_fills_order_items_from_the_wide_table(page, site_u
         expect(control.locator("tbody tr")).to_have_count(5)
         expect(control.locator("tbody tr td:nth-child(4)")).to_have_text(ORDER_ITEM_PRICES)
         expect(control.locator("span.sql-null")).to_have_count(0)
+    finally:
+        context.close()
+
+
+# --- e2e: de voorbeelden van het JOIN-hoofdstuk (#90) -----------------------
+
+# SQL hoofdstuk 3 schreef zijn voorbeelden met tabelaliassen (`FROM orders o`,
+# `c.first_name`); nu staat de tabelnaam overal voluit. De ankers hieronder
+# bevatten die volledige namen, zodat een cel met aliassen hier niet gevonden
+# wordt. Op de site-editor moeten de voorbeelden blijven lopen en dezelfde
+# kolommen tonen, en het LEFT JOIN-voorbeeld toont de klanten zonder
+# bestelling (NULL in order_id): daar draait §3 om.
+JOIN_PAGE = "chapters/SQL/03_JOIN.html"
+MULTI_JOIN_EXAMPLE = "ON order_lines.product_id = products.product_id"
+LEFT_JOIN_EXAMPLE = "LEFT JOIN orders\n    ON customers.customer_id = orders.customer_id"
+
+
+def test_join_examples_with_full_table_names_run_on_the_site_editor(page, site_url) -> None:
+    """Issue #90: de voorbeelden van §2 (Meerdere JOIN's) en §3 (LEFT JOIN)
+    lopen zonder fout op webshop.db, met de kolommen van voordien. Het eerste
+    geeft 6.632 rijen (de editor toont er 500), het tweede 3.076, met klanten
+    zonder bestelling ertussen."""
+    context, fresh = open_fresh(page, site_url, JOIN_PAGE)
+    try:
+        multi = run_cell(fresh, find_cell(fresh, MULTI_JOIN_EXAMPLE))
+        expect(multi).not_to_contain_text("Fout:")
+        expect(multi.locator("th")).to_have_text(["order_id", "first_name", "name", "quantity"])
+        expect(multi).to_contain_text("Afgekapt: alleen de eerste 500 rijen")
+
+        left = run_cell(fresh, find_cell(fresh, LEFT_JOIN_EXAMPLE))
+        expect(left).not_to_contain_text("Fout:")
+        expect(left.locator("th")).to_have_text(["first_name", "last_name", "order_id"])
+        expect(left.locator("span.sql-null").first).to_be_visible()
     finally:
         context.close()
 
