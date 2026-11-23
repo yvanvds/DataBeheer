@@ -1,0 +1,35 @@
+"Upload deze .csv in Microsoft Teams als een rubriek voor de beste bewerkingsmogelijkheden."
+
+"Overhoring SQL 3 en 4","100"
+"Beoordeling per leerdoel, over alle vragen heen. Kerndoelen wegen dubbel."
+""
+,"Volledig behaald","100","Deels behaald","50","Niet behaald","0"
+"SQL3.1 – Sleutels herkennen in een schema","Koppelt telkens een foreign key aan de primary key waarnaar hij verwijst, en kiest zo de juiste kolommen tussen twee tabellen.",,"Meestal de juiste sleutels, maar één keer twee primary keys aan elkaar gekoppeld of een verkeerde _id-kolom gekozen.",,"Koppelt kolommen die niets met elkaar te maken hebben, of vindt de sleutels in het schema niet.",
+"8"
+"SQL3.2 – Twee tabellen combineren met INNER JOIN","INNER JOIN … ON met de juiste voorwaarde, en juist uitgelegd dat alleen rijen met een match in beide tabellen getoond worden.",,"Combineert de tabellen, maar met een fout in de ON-voorwaarde, of de uitleg over rijen zonder match ontbreekt of klopt niet.",,"Geen JOIN, geen ON-voorwaarde (elke rij met elke rij), of tabellen die niet via een sleutel gekoppeld worden.",
+"8"
+"SQL3.3 – Kolommen aanduiden met tabelnaam of alias","Duidt elke kolom die in meer tabellen voorkomt aan met de tabelnaam of een alias, en leest aliassen in een gegeven query juist.",,"Meestal aangeduid, maar één kolom zonder tabel waar dat een foutmelding geeft (ambiguous column name), of een alias die niet bij de tabel hoort.",,"Kolomnamen zonder tabel in een JOIN, waardoor de query niet werkt of de verkeerde kolom toont.",
+"4"
+"SQL3.4 – Meer dan twee tabellen combineren","Combineert drie of meer tabellen met een JOIN per tabel, elk met de juiste ON-voorwaarde, ook via een koppeltabel.",,"De juiste tabellen, maar één JOIN met een verkeerde ON-voorwaarde, of een tabel te veel of te weinig.",,"Probeert alles uit twee tabellen te halen, of slaat de koppeltabel over, zodat de query niet werkt.",
+"8"
+"SQL3.5 – Gecombineerde rijen filteren en sorteren","WHERE en ORDER BY na de JOINs, op de juiste kolommen van de gekoppelde tabellen: precies de gevraagde rijen in de gevraagde volgorde.",,"Filtert en sorteert, maar met één fout: een voorwaarde op de verkeerde kolom, of een ontbrekende tweede sorteerkolom.",,"Geen filter of sortering waar die gevraagd is, of WHERE en ORDER BY op een plaats waar de query niet werkt.",
+"8"
+"SQL3.6 – Alle rijen tonen met LEFT JOIN","LEFT JOIN met de juiste tabel links (na FROM), en juist uitgelegd dat de kolommen van de rechtertabel NULL zijn bij rijen zonder match.",,"LEFT JOIN gebruikt, maar met de tabellen omgewisseld, of de uitleg over NULL bij rijen zonder match ontbreekt of klopt niet.",,"INNER JOIN waar alle rijen gevraagd zijn, en geen uitleg over de rijen zonder match.",
+"8"
+"SQL3.7 – Rijen zonder match vinden","LEFT JOIN met IS NULL op een kolom van de rechtertabel: precies de rijen zonder match.",,"Het idee klopt, maar = NULL in plaats van IS NULL, of IS NULL op een kolom van de linkertabel.",,"INNER JOIN (die net die rijen weglaat), of geen filter op rijen zonder match.",
+"8"
+"SQL3.8 – Een onderzoek in stappen oplossen","Vindt de tussenwaarden, gebruikt ze correct in de volgende query en schrijft een besluit dat steunt op het resultaat.",,"De stappen kloppen grotendeels, maar één tussenwaarde is fout of te ruim gekozen, of het besluit ontbreekt.",,"Queries die niet op elkaar voortbouwen, en geen besluit.",
+"4"
+"SQL4.1 – Samenvatten met aggregatiefuncties","Kiest telkens de functie die bij de vraag past (COUNT, SUM, AVG, MIN of MAX), op de juiste kolom.",,"Meestal juist, maar één keer een verkeerde functie (bv. SUM waar COUNT nodig is) of een verkeerde kolom.",,"Geen aggregatiefunctie maar een lijst rijen, of functies die niets met de vraag te maken hebben.",
+"8"
+"SQL4.2 – COUNT(*) en COUNT(kolom) onderscheiden","Legt juist uit dat COUNT(*) alle rijen telt en COUNT(kolom) alleen de rijen waarin die kolom niet NULL is, en rekent daar juist mee.",,"Ziet dat het verschil met lege waarden te maken heeft, maar de uitleg is onvolledig of de berekening klopt niet.",,"Geen verschil gezien, of een uitleg die niets met NULL te maken heeft.",
+"4"
+"SQL4.3 – Gefilterde rijen samenvatten","WHERE met alle gevraagde voorwaarden, zodat alleen de juiste rijen meetellen in de samenvatting.",,"Filtert, maar één voorwaarde ontbreekt of is fout (bv. een datum of een status), zodat te veel of te weinig rijen meetellen.",,"Geen WHERE: de samenvatting gaat over alle rijen.",
+"8"
+"SQL4.4 – Een berekening samenvatten","Rekent per rij en vat die berekening samen in één aggregatiefunctie, bv. de som van aantal maal prijs.",,"Het idee klopt, maar de berekening staat buiten de functie (bv. de som van de aantallen maal de som van de prijzen) of bevat een rekenfout.",,"Geen berekening: telt alleen aantallen of prijzen op.",
+"8"
+"SQL4.5 – Per groep samenvatten met GROUP BY","GROUP BY op de gevraagde groep, met de groepeerkolom in SELECT: één rij per groep met de juiste waarde.",,"Groepeert, maar op een verkeerde of extra kolom, zodat er te veel of te weinig groepen zijn, of de groepeerkolom ontbreekt in SELECT.",,"Geen GROUP BY waar per groep gevraagd wordt: één rij voor alles.",
+"8"
+"SQL4.6 – Groeperen over gekoppelde tabellen","Combineert eerst de nodige tabellen met JOIN en groepeert of rekent daarna met kolommen uit de verschillende tabellen.",,"De JOIN of de groepering klopt, maar niet allebei: bv. een fout in de ON-voorwaarde, of groeperen op de verkeerde tabel.",,"Geen JOIN waar gegevens uit twee tabellen nodig zijn, of groeperen op een kolom die niets met de vraag te maken heeft.",
+"8"
+v.11p
