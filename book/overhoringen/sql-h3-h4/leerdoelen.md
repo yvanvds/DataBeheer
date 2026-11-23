@@ -4,7 +4,7 @@
 
 Bron: `book/chapters/SQL/03_JOIN.ipynb`, `book/chapters/SQL/03b_AdventureWorks.ipynb`, `book/chapters/SQL/03c_Detective.ipynb`
 
-Niet opgenomen: `JOIN` zonder `INNER` (alleen gebruikt in het leerdoelenblok en in SQL 4, nergens uitgelegd), waarom een foreign key dubbele gegevens vermijdt (§1: kort uitgelegd, geen oefening; normalisatie zit in de ERD-hoofdstukken), `RIGHT JOIN` en `FULL JOIN` (niet in de cursus), de reflectievragen van 03c_Detective over wachtwoorden en sporen wissen (geen SQL-vaardigheid), de uitleg over de editor (Download mijn queries).
+Niet opgenomen: korte aliassen voor tabellen (`FROM customers c`: we schrijven de tabelnaam voluit, zodat de autocomplete van de editor meteen de kolommen voorstelt), `JOIN` zonder `INNER` (alleen gebruikt in het leerdoelenblok en in SQL 4, nergens uitgelegd), waarom een foreign key dubbele gegevens vermijdt (§1: kort uitgelegd, geen oefening; normalisatie zit in de ERD-hoofdstukken), `RIGHT JOIN` en `FULL JOIN` (niet in de cursus), de reflectievragen van 03c_Detective over wachtwoorden en sporen wissen (geen SQL-vaardigheid), de uitleg over de editor (Download mijn queries).
 
 ### SQL3.1 — Sleutels herkennen in een schema
 - Doel: De leerling kan in een schema de primary key van een tabel en de foreign keys die naar een andere tabel verwijzen aanwijzen, en zo bepalen via welke kolommen twee tabellen samenhangen.
@@ -18,10 +18,10 @@ Niet opgenomen: `JOIN` zonder `INNER` (alleen gebruikt in het leerdoelenblok en 
 - Waar: 03_JOIN §2 INNER JOIN, oef. 1–3; 03b_AdventureWorks oef. 1–3; 03c_Detective stap 2 en 4
 - Leerplan: LPD 4
 
-### SQL3.3 — Kolommen aanduiden met tabelnaam of alias
-- Doel: De leerling kan in een query met JOIN een kolom aanduiden met de tabelnaam (`customers.first_name`) of met een korte alias (`FROM customers c`, `c.first_name`), zodat een kolomnaam die in meer tabellen voorkomt eenduidig is.
+### SQL3.3 — Kolommen aanduiden met de tabelnaam
+- Doel: De leerling kan in een query met JOIN een kolom aanduiden met de naam van haar tabel (`customers.first_name`), zodat een kolomnaam die in meer tabellen voorkomt eenduidig is.
 - Belang: aanvullend
-- Waar: 03_JOIN §2 INNER JOIN (uitleg en tip), oef. 1–6, §3 oef. 1–5
+- Waar: 03_JOIN §2 INNER JOIN, oef. 1–6, §3 oef. 1–5
 - Leerplan: LPD 4
 
 ### SQL3.4 — Meer dan twee tabellen combineren
@@ -100,21 +100,21 @@ Niet opgenomen: het gemiddelde van sommen (§2 oef. 7: vraagt een subquery of `C
 
 Beoordeel per leerdoel (een rij) over de aangeduide vragen heen.
 
-| Leerdoel | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 | V10 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| SQL3.1 — Sleutels herkennen in een schema | x | x | | | | | | | | |
-| SQL3.2 — Twee tabellen combineren met INNER JOIN | x | x | | x | | | | | | |
-| SQL3.3 — Kolommen aanduiden met tabelnaam of alias | x | x | | | | | | | | |
-| SQL3.4 — Meer dan twee tabellen combineren | x | | | | x | | | | | |
-| SQL3.5 — Gecombineerde rijen filteren en sorteren | x | | | | x | | | | | |
-| SQL3.6 — Alle rijen tonen met LEFT JOIN | | | x | x | | | | | | |
-| SQL3.7 — Rijen zonder match vinden | | | x | x | | | | | | |
-| SQL3.8 — Een onderzoek in stappen oplossen | | | | | x | | | | | |
-| SQL4.1 — Samenvatten met aggregatiefuncties | | | | | | x | x | x | x | |
-| SQL4.2 — COUNT(*) en COUNT(kolom) onderscheiden | | | | | | | x | | | |
-| SQL4.3 — Gefilterde rijen samenvatten | | | | | | x | | | | x |
-| SQL4.4 — Een berekening samenvatten | | | | | | | | | | x |
-| SQL4.5 — Per groep samenvatten met GROUP BY | | | | | | | | x | x | x |
-| SQL4.6 — Groeperen over gekoppelde tabellen | | | | | | | | | x | x |
+| Leerdoel | V1 | V2 | V3 | V4 | V5 | V6 | V7 | V8 | V9 |
+|---|---|---|---|---|---|---|---|---|---|
+| SQL3.1 — Sleutels herkennen in een schema | x | x | | | | | | | |
+| SQL3.2 — Twee tabellen combineren met INNER JOIN | x | x | x | | | | | | |
+| SQL3.3 — Kolommen aanduiden met de tabelnaam | x | | | | | | | | |
+| SQL3.4 — Meer dan twee tabellen combineren | | | | x | | | | | |
+| SQL3.5 — Gecombineerde rijen filteren en sorteren | x | | | x | | | | | |
+| SQL3.6 — Alle rijen tonen met LEFT JOIN | | | x | | | | | | |
+| SQL3.7 — Rijen zonder match vinden | | | x | | | | | | |
+| SQL3.8 — Een onderzoek in stappen oplossen | | | | x | | | | | |
+| SQL4.1 — Samenvatten met aggregatiefuncties | | | | | x | x | x | x | |
+| SQL4.2 — COUNT(*) en COUNT(kolom) onderscheiden | | | | | | x | | | |
+| SQL4.3 — Gefilterde rijen samenvatten | | | | | x | | | | x |
+| SQL4.4 — Een berekening samenvatten | | | | | | | | | x |
+| SQL4.5 — Per groep samenvatten met GROUP BY | | | | | | | x | x | x |
+| SQL4.6 — Groeperen over gekoppelde tabellen | | | | | | | | x | x |
 
 Niet getoetst: geen; alle 14 leerdoelen worden getoetst.
